@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip --version)",
+      "Bash(python -m venv .venv)",
+      "Bash(\".venv/Scripts/python.exe\" -m pip install --quiet --upgrade pip)",
+      "Bash(\".venv/Scripts/python.exe\" -m pip install --quiet -r requirements.txt)",
+      "Bash(.venv/bin/python.exe -m pip install --quiet --upgrade pip)",
+      "Bash(.venv/bin/python.exe -m pip install --quiet -r requirements.txt)",
+      "PowerShell(Get-Command python)",
+      "PowerShell(py -0p 2>&1)",
+      "Bash(./.venv/Scripts/python.exe -c ' *)"
+    ]
+  }
+}
