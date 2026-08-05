@@ -58,12 +58,4 @@ schtasks /create /tn "WeeklySalesReport" /tr "python -m src.main --as-of-date %d
 
 (or an equivalent cron entry / Airflow DAG in a Linux/cloud environment). Not set up here since it's a portfolio demo, not a live job — but the pipeline is written to be trivially droppable into a scheduler as-is.
 
-## Resume bullets
 
-- Built a Python pipeline that cleans and validates raw e-commerce transaction exports (500K+ records) and generates a formatted weekly Excel report with KPI summaries, week-over-week trends, and top-product/country breakdowns — replacing a manual, multi-hour reporting process with a single command.
-- Designed a data-quality audit trail that logs every cleaning decision (duplicates removed, cancellations separated, missing IDs flagged) so downstream KPI numbers are traceable and defensible.
-- Wrote unit tests (pytest) covering the cleaning logic to guard against regressions in a data pipeline feeding stakeholder-facing reports.
-
-## Tech stack
-
-Python, pandas, openpyxl, requests, pytest.
