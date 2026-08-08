@@ -22,11 +22,11 @@ The script downloads and caches this automatically on first run — no manual do
 
 Because the dataset is historical, the pipeline is driven by `--as-of-date` to simulate "this week's export just arrived." It filters to the Mon–Sun ISO week containing that date, as if it had been triggered by a Monday-morning scheduled job.
 
-1. **Download** the raw export (cached after first run).
+1. **Download** the raw export (cached after first run, with a progress bar on first download).
 2. **Clean & validate**: drops exact duplicates, separates cancellations into a returns view instead of just deleting them, flags rows with missing customer IDs, and drops non-product adjustment rows — logging exactly how many rows were affected by each step.
 3. **Compute KPIs**: revenue, units sold, orders, unique customers — for the target week *and* the prior week, with week-over-week % change. Also: top 10 products by revenue, revenue by country, and cancellation totals.
 4. **Generate a formatted Excel workbook** with four sheets: `Summary` (KPI table + daily revenue trend chart), `Top Products` (table + chart), `By Country` (table + chart), and `Data Quality Log` (what got cleaned and why — an audit trail).
-5. **Log the run** to `logs/run_<date>.log`.
+5. **Print a colorized summary** to the console and **log the full run detail** to `logs/run_<date>.log`.
 
 ## Setup
 
@@ -40,7 +40,22 @@ pip install -r requirements.txt
 python -m src.main --as-of-date 2011-11-28
 ```
 
-Output: `output/weekly_report_2011-11-28.xlsx`
+Output: `output/weekly_report_2011-11-28.xlsx`, plus a console summary:
+
+```
+        Weekly Sales Report - 2011-11-28 to 2011-12-04
+┌──────────────────┬─────────────┬─────────────┬──────────────┐
+│ Metric           │   This Week │   Last Week │ WoW % Change │
+├──────────────────┼─────────────┼─────────────┼──────────────┤
+│ Revenue          │ £323,398.70 │ £315,114.06 │        +2.6% │
+│ Units Sold       │     156,489 │     156,628 │        -0.1% │
+│ Orders           │         665 │         619 │        +7.4% │
+│ Unique Customers │         516 │         492 │        +4.9% │
+└──────────────────┴─────────────┴─────────────┴──────────────┘
+Report written to output/weekly_report_2011-11-28.xlsx
+```
+
+If a date has no matching transactions, or if the download/input data fails, the CLI prints a plain-language message (with exit code 1 on failure) instead of a raw traceback — the full technical detail still goes to `logs/run_<date>.log`.
 
 ## Tests
 
@@ -57,5 +72,3 @@ schtasks /create /tn "WeeklySalesReport" /tr "python -m src.main --as-of-date %d
 ```
 
 (or an equivalent cron entry / Airflow DAG in a Linux/cloud environment). Not set up here since it's a portfolio demo, not a live job — but the pipeline is written to be trivially droppable into a scheduler as-is.
-
-
