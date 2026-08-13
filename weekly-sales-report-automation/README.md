@@ -25,7 +25,7 @@ Because the dataset is historical, the pipeline is driven by `--as-of-date` to s
 1. **Download** the raw export (cached after first run, with a progress bar on first download).
 2. **Clean & validate**: drops exact duplicates, separates cancellations into a returns view instead of just deleting them, flags rows with missing customer IDs, and drops non-product adjustment rows — logging exactly how many rows were affected by each step.
 3. **Compute KPIs**: revenue, units sold, orders, unique customers — for the target week *and* the prior week, with week-over-week % change. Also: top 10 products by revenue, revenue by country, and cancellation totals.
-4. **Generate a formatted Excel workbook** with four sheets: `Summary` (KPI table + daily revenue trend chart), `Top Products` (table + chart), `By Country` (table + chart), and `Data Quality Log` (what got cleaned and why — an audit trail).
+4. **Generate a formatted Excel workbook** with four sheets: `Summary` (KPI table + daily revenue trend chart), `Top Products` (table + chart), `By Country` (table + chart), and `Data Quality Log` (what got cleaned and why — an audit trail). Each sheet has a frozen header row, autofilter, zebra-striped rows, color-coded tabs, and green/red week-over-week % changes.
 5. **Print a colorized summary** to the console and **log the full run detail** to `logs/run_<date>.log`.
 
 ## Setup
