@@ -63,6 +63,8 @@ If a date has no matching transactions, or if the download/input data fails, the
 pytest
 ```
 
+29 tests covering the cleaning rules (`test_clean.py`), KPI/week-boundary math (`test_report.py`), and the generated workbook's structure — sheets, formatting, and a regression test for a pandas `NaN`/`None` edge case (`test_excel_report.py`).
+
 ## How this would run in production
 
 In a real job, this would be scheduled to run every Monday morning against the latest export, with the output emailed or dropped into a shared drive. On Windows that's a one-line Task Scheduler entry:
