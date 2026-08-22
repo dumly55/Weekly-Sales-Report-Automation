@@ -1,5 +1,7 @@
 # Weekly Sales Report Automation
 
+[![Tests](https://github.com/dumly55/Weekly-Sales-Report-Automation/actions/workflows/tests.yml/badge.svg)](https://github.com/dumly55/Weekly-Sales-Report-Automation/actions/workflows/tests.yml)
+
 Turns a raw, messy e-commerce transaction export into a formatted, ready-to-send weekly Excel report — replacing what would otherwise be a manual, error-prone weekly task in Excel.
 
 ## The problem this simulates
