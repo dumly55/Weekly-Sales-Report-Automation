@@ -1,5 +1,6 @@
-"""Fetches the raw transaction data: either the cached UCI demo dataset, or a
-user-supplied link (a direct CSV/Excel file, or a public Google Sheet).
+"""Fetches the raw transaction data: the cached UCI demo dataset, a
+user-supplied link (a direct CSV/Excel file, or a public Google Sheet), or a
+local file the user picked from disk.
 """
 
 import io
@@ -138,6 +139,22 @@ def fetch_remote_dataset(url: str, status_callback: StatusCallback | None = None
             "Couldn't read that link as a spreadsheet. Make sure it's a direct link to a "
             "CSV or Excel file, or a Google Sheet shared as \"Anyone with the link can view\"."
         ) from exc
+
+    validate_raw_columns(df)
+    return df
+
+
+def load_local_dataset(path: Path, status_callback: StatusCallback | None = None) -> pd.DataFrame:
+    """Reads a user-selected local CSV/Excel file (e.g. via the GUI's file picker)
+    and parses it into a DataFrame. No download involved -- just local file I/O.
+    """
+    notify = status_callback or (lambda _msg: None)
+    notify(f"Reading {path.name}...")
+
+    try:
+        df = pd.read_csv(path) if path.suffix.lower() == ".csv" else pd.read_excel(path)
+    except Exception as exc:
+        raise ValueError(f"Couldn't read '{path.name}' as a spreadsheet. Make sure it's a valid CSV or Excel file.") from exc
 
     validate_raw_columns(df)
     return df

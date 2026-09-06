@@ -12,7 +12,7 @@ import threading
 import tkinter as tk
 from datetime import date, datetime
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from .main import describe_error, run_pipeline, setup_logging
 
@@ -49,12 +49,16 @@ class ReportApp:
 
         source_frame = ttk.LabelFrame(self.root, text="Data source (optional)")
         source_frame.pack(fill="x", **pad)
+        source_row = ttk.Frame(source_frame)
+        source_row.pack(fill="x", padx=10, pady=(8, 2))
         self.link_var = tk.StringVar()
-        ttk.Entry(source_frame, textvariable=self.link_var).pack(fill="x", padx=10, pady=(8, 2))
+        ttk.Entry(source_row, textvariable=self.link_var).pack(side="left", fill="x", expand=True)
+        ttk.Button(source_row, text="Browse...", command=self._on_browse).pack(side="left", padx=(6, 0))
         ttk.Label(
             source_frame,
-            text='Paste a link to a CSV/Excel file, or a Google Sheet shared as "Anyone with the '
-            "link can view\". Leave blank to use the built-in demo dataset.",
+            text='Paste a link (CSV/Excel file, or a Google Sheet shared as "Anyone with the link '
+            'can view"), or click Browse to pick a file from your computer. Leave blank to use '
+            "the built-in demo dataset.",
             wraplength=540,
             foreground="#666666",
         ).pack(anchor="w", padx=10, pady=(0, 8))
@@ -80,6 +84,14 @@ class ReportApp:
         self.results_frame = ttk.Frame(self.root)
         self.results_frame.pack(fill="both", expand=True, padx=16, pady=(4, 16))
 
+    def _on_browse(self) -> None:
+        path = filedialog.askopenfilename(
+            title="Select a CSV or Excel file",
+            filetypes=[("Spreadsheets", "*.csv *.xlsx *.xls"), ("All files", "*.*")],
+        )
+        if path:
+            self.link_var.set(path)
+
     def _on_generate(self) -> None:
         raw_date = self.date_var.get().strip()
         try:
@@ -88,7 +100,9 @@ class ReportApp:
             messagebox.showerror("Invalid date", f'"{raw_date}" isn\'t a valid date. Use YYYY-MM-DD.')
             return
 
-        data_url = self.link_var.get().strip() or None
+        source = self.link_var.get().strip()
+        data_url = source if source.lower().startswith(("http://", "https://")) else None
+        data_file = source if source and data_url is None else None
 
         self.generate_btn.config(state="disabled")
         self._clear_results()
@@ -96,16 +110,17 @@ class ReportApp:
         self.progress.start(12)
         self.status_var.set("Starting...")
 
-        thread = threading.Thread(target=self._run_pipeline_worker, args=(as_of_date, data_url), daemon=True)
+        thread = threading.Thread(target=self._run_pipeline_worker, args=(as_of_date, data_url, data_file), daemon=True)
         thread.start()
         self.root.after(100, self._poll_queue)
 
-    def _run_pipeline_worker(self, as_of_date: date, data_url: str | None) -> None:
+    def _run_pipeline_worker(self, as_of_date: date, data_url: str | None, data_file: str | None) -> None:
         try:
             setup_logging(as_of_date)
             report_data, _quality_log, out_path = run_pipeline(
                 as_of_date,
                 data_url=data_url,
+                data_file=data_file,
                 status_callback=lambda msg: self._work_queue.put(("status", msg)),
             )
             self._work_queue.put(("success", (report_data, out_path)))

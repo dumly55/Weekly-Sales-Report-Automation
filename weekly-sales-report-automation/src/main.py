@@ -16,7 +16,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .clean import QualityLog, clean_transactions, load_raw
-from .download_data import StatusCallback, ensure_raw_data, fetch_remote_dataset
+from .download_data import StatusCallback, ensure_raw_data, fetch_remote_dataset, load_local_dataset
 from .excel_report import build_workbook
 from .report import WeeklyReportData, build_report_data
 
@@ -49,6 +49,11 @@ def parse_args() -> argparse.Namespace:
             "Optional: a link to a CSV/Excel file, or a Google Sheet shared as "
             '"Anyone with the link can view", to use instead of the built-in demo dataset.'
         ),
+    )
+    parser.add_argument(
+        "--data-file",
+        default=None,
+        help="Optional: path to a local CSV/Excel file to use instead of the built-in demo dataset. Takes priority over --data-url.",
     )
     return parser.parse_args()
 
@@ -92,21 +97,24 @@ def describe_error(exc: Exception) -> str:
 def run_pipeline(
     as_of_date: date,
     data_url: str | None = None,
+    data_file: str | Path | None = None,
     status_callback: StatusCallback | None = None,
 ) -> tuple[WeeklyReportData, QualityLog, Path]:
     """Runs the full pipeline (fetch -> clean -> compute KPIs -> build workbook)
     and returns the results. Shared by the CLI and the GUI -- neither one owns
     this logic, they just present it differently.
 
-    `data_url`, if given, is a user-supplied CSV/Excel link or Google Sheet
-    (see `download_data.fetch_remote_dataset`) instead of the built-in demo
-    dataset. `status_callback`, if given, receives a short human-readable
-    string at each stage instead of the CLI's console/log output.
+    `data_file` (a local path) takes priority over `data_url` (a link), which
+    takes priority over the built-in demo dataset. `status_callback`, if given,
+    receives a short human-readable string at each stage instead of the CLI's
+    console/log output.
     """
     notify = status_callback or (lambda _msg: None)
     logger = logging.getLogger("main")
 
-    if data_url:
+    if data_file:
+        raw_df = load_local_dataset(Path(data_file), status_callback=status_callback)
+    elif data_url:
         raw_df = fetch_remote_dataset(data_url, status_callback=status_callback)
     else:
         notify("Checking for the cached demo dataset...")
@@ -165,7 +173,7 @@ def main() -> None:
     logger.info("Starting weekly report run for as-of date %s", args.as_of_date)
 
     try:
-        report_data, quality_log, out_path = run_pipeline(args.as_of_date, data_url=args.data_url)
+        report_data, quality_log, out_path = run_pipeline(args.as_of_date, data_url=args.data_url, data_file=args.data_file)
 
         if report_data.current["orders"] == 0:
             console.print(
