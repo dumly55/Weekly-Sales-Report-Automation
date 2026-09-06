@@ -36,11 +36,22 @@ Because the dataset is historical, the pipeline is driven by `--as-of-date` to s
 pip install -r requirements.txt
 ```
 
-## Run
+## Don't want to use the terminal?
+
+Double-click **`run_gui.bat`**. It opens a small window where you can optionally paste a data link and pick a week, then click **Generate Report** — no commands to type. It reuses the exact same pipeline as the CLI below, just with a point-and-click front end (`src/gui.py`, launched via `run_gui.pyw`).
+
+The data-source field accepts:
+- A direct link to a CSV or Excel file
+- A Google Sheet shared as **"Anyone with the link can view"** (rewritten automatically to its CSV export link)
+- Left blank: uses the built-in demo dataset described below
+
+## Run (command line)
 
 ```bash
 python -m src.main --as-of-date 2011-11-28
 ```
+
+Add `--data-url "<link>"` to point it at your own CSV/Excel file or public Google Sheet instead of the demo dataset (same rules as the GUI field above).
 
 Output: `output/weekly_report_2011-11-28.xlsx`, plus a console summary:
 
@@ -65,7 +76,7 @@ If a date has no matching transactions, or if the download/input data fails, the
 pytest
 ```
 
-29 tests covering the cleaning rules (`test_clean.py`), KPI/week-boundary math (`test_report.py`), and the generated workbook's structure — sheets, formatting, and a regression test for a pandas `NaN`/`None` edge case (`test_excel_report.py`).
+39 tests covering the cleaning rules (`test_clean.py`), KPI/week-boundary math (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
 
 ## How this would run in production
 

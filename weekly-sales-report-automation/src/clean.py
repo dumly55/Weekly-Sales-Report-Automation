@@ -29,11 +29,20 @@ class QualityLog(NamedTuple):
     rows_out: int
 
 
-def load_raw(path: Path) -> pd.DataFrame:
-    df = pd.read_excel(path, sheet_name=0)
+def validate_raw_columns(df: pd.DataFrame) -> None:
+    """Raises a friendly ValueError if any expected column is missing.
+
+    Shared by both the built-in demo dataset loader and the custom data-link
+    loader, so a malformed file gives the same clear error either way.
+    """
     missing = set(RAW_COLUMNS) - set(df.columns)
     if missing:
-        raise ValueError(f"Raw file is missing expected columns: {missing}")
+        raise ValueError(f"Data is missing expected columns: {sorted(missing)}")
+
+
+def load_raw(path: Path) -> pd.DataFrame:
+    df = pd.read_excel(path, sheet_name=0)
+    validate_raw_columns(df)
     return df
 
 
