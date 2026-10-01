@@ -10,9 +10,11 @@ import os
 import queue
 import threading
 import tkinter as tk
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+
+from tkcalendar import DateEntry
 
 from .main import describe_error, run_pipeline, setup_logging
 from .report import format_wow
@@ -66,14 +68,18 @@ class ReportApp:
 
         week_frame = ttk.LabelFrame(self.root, text="Report week")
         week_frame.pack(fill="x", **pad)
+        self.use_latest_var = tk.BooleanVar(value=True)
+        ttk.Radiobutton(
+            week_frame, text="Latest week in the data", variable=self.use_latest_var, value=True, command=self._sync_date_picker
+        ).pack(anchor="w", padx=10, pady=(8, 2))
         date_row = ttk.Frame(week_frame)
-        date_row.pack(fill="x", padx=10, pady=8)
-        ttk.Label(date_row, text="Any date in the week (YYYY-MM-DD):").pack(side="left")
-        self.date_var = tk.StringVar()
-        ttk.Entry(date_row, textvariable=self.date_var, width=14).pack(side="left", padx=8)
-        ttk.Label(week_frame, text="Leave blank to report on the latest week in the data.", foreground="#666666").pack(
-            anchor="w", padx=10, pady=(0, 8)
-        )
+        date_row.pack(fill="x", padx=10, pady=(0, 8))
+        ttk.Radiobutton(
+            date_row, text="Week containing:", variable=self.use_latest_var, value=False, command=self._sync_date_picker
+        ).pack(side="left")
+        self.date_picker = DateEntry(date_row, date_pattern="yyyy-mm-dd", width=12, firstweekday="monday")
+        self.date_picker.pack(side="left", padx=8)
+        self._sync_date_picker()
 
         self.generate_btn = ttk.Button(self.root, text="Generate Report", command=self._on_generate)
         self.generate_btn.pack(pady=(4, 4))
@@ -85,6 +91,9 @@ class ReportApp:
         self.results_frame = ttk.Frame(self.root)
         self.results_frame.pack(fill="both", expand=True, padx=16, pady=(4, 16))
 
+    def _sync_date_picker(self) -> None:
+        self.date_picker.configure(state="disabled" if self.use_latest_var.get() else "normal")
+
     def _on_browse(self) -> None:
         path = filedialog.askopenfilename(
             title="Select a CSV or Excel file",
@@ -94,14 +103,8 @@ class ReportApp:
             self.link_var.set(path)
 
     def _on_generate(self) -> None:
-        raw_date = self.date_var.get().strip()
-        as_of_date = None
-        if raw_date:
-            try:
-                as_of_date = datetime.strptime(raw_date, "%Y-%m-%d").date()
-            except ValueError:
-                messagebox.showerror("Invalid date", f'"{raw_date}" isn\'t a valid date. Use YYYY-MM-DD, or leave it blank.')
-                return
+        # get_date() never raises: tkcalendar reverts unparseable text to the last valid date.
+        as_of_date = None if self.use_latest_var.get() else self.date_picker.get_date()
 
         source = self.link_var.get().strip()
         data_url = source if source.lower().startswith(("http://", "https://")) else None
@@ -155,6 +158,11 @@ class ReportApp:
             self.status_var.set(f"Done -- but no transactions were found for {report_data.week_label}.")
         else:
             self.status_var.set(f"Done. Report covers {report_data.week_label}.")
+
+        # Start the calendar near the data's dates instead of today. tkcalendar ignores set_date while disabled.
+        self.date_picker.configure(state="normal")
+        self.date_picker.set_date(report_data.week_start.date())
+        self._sync_date_picker()
 
         self._show_results(report_data, out_path)
 
