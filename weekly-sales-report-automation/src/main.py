@@ -93,6 +93,18 @@ def describe_error(exc: Exception) -> str:
     return "Something went wrong. Check the log file for details."
 
 
+def next_free_path(path: Path) -> Path:
+    """Returns `path`, or "name (2).ext", "name (3).ext", ... if it already exists."""
+    if not path.exists():
+        return path
+    n = 2
+    while True:
+        candidate = path.with_name(f"{path.stem} ({n}){path.suffix}")
+        if not candidate.exists():
+            return candidate
+        n += 1
+
+
 def run_pipeline(
     as_of_date: date | None,
     data_url: str | None = None,
@@ -133,7 +145,7 @@ def run_pipeline(
     report_data = build_report_data(sales_df, cancellations_df, as_of_date)
 
     notify("Building the Excel report...")
-    out_path = OUTPUT_DIR / f"weekly_report_{as_of_date}.xlsx"
+    out_path = next_free_path(OUTPUT_DIR / f"weekly_report_{as_of_date}.xlsx")
     build_workbook(report_data, quality_log, out_path)
     logger.info("Report written to %s", out_path)
 
