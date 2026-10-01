@@ -69,9 +69,9 @@ class ReportApp:
         date_row = ttk.Frame(week_frame)
         date_row.pack(fill="x", padx=10, pady=8)
         ttk.Label(date_row, text="Any date in the week (YYYY-MM-DD):").pack(side="left")
-        self.date_var = tk.StringVar(value=date.today().isoformat())
+        self.date_var = tk.StringVar()
         ttk.Entry(date_row, textvariable=self.date_var, width=14).pack(side="left", padx=8)
-        ttk.Label(week_frame, text="Defaults to this week -- just click Generate.", foreground="#666666").pack(
+        ttk.Label(week_frame, text="Leave blank to report on the latest week in the data.", foreground="#666666").pack(
             anchor="w", padx=10, pady=(0, 8)
         )
 
@@ -95,11 +95,13 @@ class ReportApp:
 
     def _on_generate(self) -> None:
         raw_date = self.date_var.get().strip()
-        try:
-            as_of_date = datetime.strptime(raw_date, "%Y-%m-%d").date()
-        except ValueError:
-            messagebox.showerror("Invalid date", f'"{raw_date}" isn\'t a valid date. Use YYYY-MM-DD.')
-            return
+        as_of_date = None
+        if raw_date:
+            try:
+                as_of_date = datetime.strptime(raw_date, "%Y-%m-%d").date()
+            except ValueError:
+                messagebox.showerror("Invalid date", f'"{raw_date}" isn\'t a valid date. Use YYYY-MM-DD, or leave it blank.')
+                return
 
         source = self.link_var.get().strip()
         data_url = source if source.lower().startswith(("http://", "https://")) else None
@@ -115,7 +117,7 @@ class ReportApp:
         thread.start()
         self.root.after(100, self._poll_queue)
 
-    def _run_pipeline_worker(self, as_of_date: date, data_url: str | None, data_file: str | None) -> None:
+    def _run_pipeline_worker(self, as_of_date: date | None, data_url: str | None, data_file: str | None) -> None:
         try:
             setup_logging(as_of_date)
             report_data, _quality_log, out_path = run_pipeline(
@@ -150,9 +152,9 @@ class ReportApp:
         self.generate_btn.config(state="normal")
 
         if report_data.current["orders"] == 0:
-            self.status_var.set("Done -- but no transactions were found for that week.")
+            self.status_var.set(f"Done -- but no transactions were found for {report_data.week_label}.")
         else:
-            self.status_var.set("Done.")
+            self.status_var.set(f"Done. Report covers {report_data.week_label}.")
 
         self._show_results(report_data, out_path)
 
