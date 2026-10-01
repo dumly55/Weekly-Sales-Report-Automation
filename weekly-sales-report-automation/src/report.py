@@ -17,6 +17,12 @@ def week_bounds(as_of_date: date) -> tuple[pd.Timestamp, pd.Timestamp]:
     return start, end
 
 
+def latest_sales_date(sales_df: pd.DataFrame) -> date:
+    if sales_df.empty:
+        raise ValueError("No valid sales rows found, so there's no week to report on.")
+    return sales_df["InvoiceDate"].max().date()
+
+
 def _filter_range(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
     return df[(df["InvoiceDate"] >= start) & (df["InvoiceDate"] < end)]
 

@@ -7,6 +7,7 @@ from src.report import (
     build_report_data,
     daily_revenue,
     format_wow,
+    latest_sales_date,
     pct_change,
     revenue_by_country,
     top_products,
@@ -74,6 +75,15 @@ class TestWeekBounds:
     def test_end_is_exclusive_next_monday(self):
         _, end = week_bounds(date(2011, 11, 24))
         assert end == pd.Timestamp("2011-11-28")
+
+
+class TestLatestSalesDate:
+    def test_returns_date_of_most_recent_sale(self, sales_df):
+        assert latest_sales_date(sales_df) == date(2011, 11, 25)
+
+    def test_empty_data_raises_friendly_error(self, sales_df):
+        with pytest.raises(ValueError, match="no week to report on"):
+            latest_sales_date(sales_df.iloc[0:0])
 
 
 class TestPctChange:

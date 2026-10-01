@@ -51,6 +51,8 @@ The data-source field accepts:
 python -m src.main --as-of-date 2011-11-28
 ```
 
+Leave off `--as-of-date` to report on the latest week that has sales in the data.
+
 Add `--data-url "<link>"` to point it at your own CSV/Excel file or public Google Sheet instead of the demo dataset (same rules as the GUI field above).
 
 Output: `output/weekly_report_2011-11-28.xlsx`, plus a console summary:
@@ -76,7 +78,7 @@ If a date has no matching transactions, or if the download/input data fails, the
 pytest
 ```
 
-43 tests covering the cleaning rules (`test_clean.py`), KPI/week-boundary math and summary formatting (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
+45 tests covering the cleaning rules (`test_clean.py`), KPI/week-boundary math and summary formatting (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
 
 ## How this would run in production
 

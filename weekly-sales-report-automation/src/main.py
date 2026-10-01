@@ -17,7 +17,7 @@ from rich.table import Table
 from .clean import QualityLog, clean_transactions, load_raw
 from .download_data import StatusCallback, ensure_raw_data, fetch_remote_dataset, load_local_dataset
 from .excel_report import build_workbook
-from .report import WeeklyReportData, build_report_data, format_wow
+from .report import WeeklyReportData, build_report_data, format_wow, latest_sales_date
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = PROJECT_ROOT / "output"
@@ -37,9 +37,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate the automated weekly sales report.")
     parser.add_argument(
         "--as-of-date",
-        required=True,
+        default=None,
         type=_parse_date,
-        help="Date (YYYY-MM-DD) whose ISO week (Mon-Sun) should be reported on.",
+        help="Date (YYYY-MM-DD) whose ISO week (Mon-Sun) should be reported on. Defaults to the latest week in the data.",
     )
     parser.add_argument(
         "--data-url",
@@ -57,7 +57,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def setup_logging(as_of_date: date) -> None:
+def setup_logging(as_of_date: date | None) -> None:
     """Logs the full run detail to a file. Console output is handled separately via
     rich (progress bar, summary table, friendly errors), so no console handler here.
 
@@ -67,7 +67,7 @@ def setup_logging(as_of_date: date) -> None:
     per run instead of writing everything to whichever date was requested first.
     """
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    log_file = LOGS_DIR / f"run_{as_of_date}.log"
+    log_file = LOGS_DIR / f"run_{as_of_date or 'latest'}.log"
 
     root_logger = logging.getLogger()
     for handler in root_logger.handlers[:]:
@@ -94,7 +94,7 @@ def describe_error(exc: Exception) -> str:
 
 
 def run_pipeline(
-    as_of_date: date,
+    as_of_date: date | None,
     data_url: str | None = None,
     data_file: str | Path | None = None,
     status_callback: StatusCallback | None = None,
@@ -104,7 +104,8 @@ def run_pipeline(
     this logic, they just present it differently.
 
     `data_file` (a local path) takes priority over `data_url` (a link), which
-    takes priority over the built-in demo dataset. `status_callback`, if given,
+    takes priority over the built-in demo dataset. If `as_of_date` is None, the
+    latest week that has sales in the data is reported. `status_callback`, if given,
     receives a short human-readable string at each stage instead of the CLI's
     console/log output.
     """
@@ -123,6 +124,10 @@ def run_pipeline(
 
     notify("Cleaning and validating data...")
     sales_df, cancellations_df, quality_log = clean_transactions(raw_df)
+
+    if as_of_date is None:
+        as_of_date = latest_sales_date(sales_df)
+        logger.info("No date given; using the latest week in the data (%s)", as_of_date)
 
     notify("Computing KPIs...")
     report_data = build_report_data(sales_df, cancellations_df, as_of_date)
@@ -159,14 +164,14 @@ def main() -> None:
     args = parse_args()
     setup_logging(args.as_of_date)
     logger = logging.getLogger("main")
-    logger.info("Starting weekly report run for as-of date %s", args.as_of_date)
+    logger.info("Starting weekly report run for as-of date %s", args.as_of_date or "latest week in the data")
 
     try:
         report_data, quality_log, out_path = run_pipeline(args.as_of_date, data_url=args.data_url, data_file=args.data_file)
 
         if report_data.current["orders"] == 0:
             console.print(
-                f"[yellow]Warning:[/yellow] no transactions found for the week of {args.as_of_date}. "
+                f"[yellow]Warning:[/yellow] no transactions found for the week of {report_data.week_label}. "
                 "The report will still be generated, but it will be empty."
             )
 
