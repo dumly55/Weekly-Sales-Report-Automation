@@ -6,6 +6,7 @@ import pytest
 from src.report import (
     build_report_data,
     daily_revenue,
+    format_wow,
     pct_change,
     revenue_by_country,
     top_products,
@@ -177,3 +178,23 @@ class TestBuildReportData:
         assert len(data.daily) == 7
         assert list(data.top_products["StockCode"]) == ["A1", "B1"]
         assert list(data.by_country["Country"]) == ["United Kingdom", "France"]
+
+
+class TestDisplayHelpers:
+    def test_week_label_shows_monday_to_sunday(self, sales_df, cancellations_df):
+        data = build_report_data(sales_df, cancellations_df, AS_OF_DATE)
+        assert data.week_label == "2011-11-21 to 2011-11-27"
+
+    def test_summary_rows_are_formatted(self, sales_df, cancellations_df):
+        data = build_report_data(sales_df, cancellations_df, AS_OF_DATE)
+        assert data.summary_rows() == [
+            ("Revenue", "£180.00", "£100.00", pytest.approx(80.0)),
+            ("Units Sold", "18", "10", pytest.approx(80.0)),
+            ("Orders", "3", "1", pytest.approx(200.0)),
+            ("Unique Customers", "2", "1", pytest.approx(100.0)),
+        ]
+
+    def test_format_wow(self):
+        assert format_wow(2.567) == "+2.6%"
+        assert format_wow(-0.1) == "-0.1%"
+        assert format_wow(None) == "n/a"

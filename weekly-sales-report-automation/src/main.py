@@ -10,7 +10,6 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
-import pandas as pd
 import requests
 from rich.console import Console
 from rich.table import Table
@@ -18,7 +17,7 @@ from rich.table import Table
 from .clean import QualityLog, clean_transactions, load_raw
 from .download_data import StatusCallback, ensure_raw_data, fetch_remote_dataset, load_local_dataset
 from .excel_report import build_workbook
-from .report import WeeklyReportData, build_report_data
+from .report import WeeklyReportData, build_report_data, format_wow
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = PROJECT_ROOT / "output"
@@ -138,28 +137,18 @@ def run_pipeline(
 
 
 def _print_summary(report_data: WeeklyReportData, out_path: Path) -> None:
-    week_label = f"{report_data.week_start.date()} to {(report_data.week_end - pd.Timedelta(days=1)).date()}"
-
-    table = Table(title=f"Weekly Sales Report - {week_label}", title_style="bold cyan")
+    table = Table(title=f"Weekly Sales Report - {report_data.week_label}", title_style="bold cyan")
     table.add_column("Metric", style="bold")
     table.add_column("This Week", justify="right")
     table.add_column("Last Week", justify="right")
     table.add_column("WoW % Change", justify="right")
 
-    def fmt_wow(value: float | None) -> str:
-        if value is None:
-            return "n/a"
-        color = "green" if value >= 0 else "red"
-        return f"[{color}]{value:+.1f}%[/{color}]"
-
-    rows = [
-        ("Revenue", f"£{report_data.current['revenue']:,.2f}", f"£{report_data.previous['revenue']:,.2f}", report_data.wow["revenue"]),
-        ("Units Sold", f"{report_data.current['units']:,}", f"{report_data.previous['units']:,}", report_data.wow["units"]),
-        ("Orders", f"{report_data.current['orders']:,}", f"{report_data.previous['orders']:,}", report_data.wow["orders"]),
-        ("Unique Customers", f"{report_data.current['customers']:,}", f"{report_data.previous['customers']:,}", report_data.wow["customers"]),
-    ]
-    for metric, current, previous, wow in rows:
-        table.add_row(metric, current, previous, fmt_wow(wow))
+    for metric, current, previous, wow in report_data.summary_rows():
+        wow_text = format_wow(wow)
+        if wow is not None:
+            color = "green" if wow >= 0 else "red"
+            wow_text = f"[{color}]{wow_text}[/{color}]"
+        table.add_row(metric, current, previous, wow_text)
 
     console.print()
     console.print(table)

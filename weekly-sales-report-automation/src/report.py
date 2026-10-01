@@ -79,6 +79,24 @@ class WeeklyReportData:
     by_country: pd.DataFrame
     daily: pd.DataFrame
 
+    @property
+    def week_label(self) -> str:
+        return f"{self.week_start.date()} to {(self.week_end - pd.Timedelta(days=1)).date()}"
+
+    def summary_rows(self) -> list[tuple[str, str, str, float | None]]:
+        """Display-formatted (metric, this week, last week, raw WoW %) rows shared by the CLI and GUI."""
+        c, p = self.current, self.previous
+        return [
+            ("Revenue", f"£{c['revenue']:,.2f}", f"£{p['revenue']:,.2f}", self.wow["revenue"]),
+            ("Units Sold", f"{c['units']:,}", f"{p['units']:,}", self.wow["units"]),
+            ("Orders", f"{c['orders']:,}", f"{p['orders']:,}", self.wow["orders"]),
+            ("Unique Customers", f"{c['customers']:,}", f"{p['customers']:,}", self.wow["customers"]),
+        ]
+
+
+def format_wow(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:+.1f}%"
+
 
 def build_report_data(sales_df: pd.DataFrame, cancellations_df: pd.DataFrame, as_of_date: date) -> WeeklyReportData:
     start, end = week_bounds(as_of_date)

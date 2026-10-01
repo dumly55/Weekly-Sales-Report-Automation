@@ -24,36 +24,8 @@ logger = logging.getLogger(__name__)
 StatusCallback = Callable[[str], None]
 
 
-def _download_with_progress(url: str) -> bytes:
-    """Streams the dataset download and renders a progress bar in the console.
-
-    Only used when there's a real console to draw into (the CLI path). The GUI
-    path uses `_download_silently` instead, since a windowed app launched via
-    pythonw.exe has no stdout for rich to write to.
-    """
-    with requests.get(url, timeout=60, stream=True) as response:
-        response.raise_for_status()
-        total_size = int(response.headers.get("Content-Length", 0))
-
-        chunks = []
-        with Progress(
-            "[progress.description]{task.description}",
-            BarColumn(),
-            DownloadColumn(),
-            TransferSpeedColumn(),
-            TimeRemainingColumn(),
-        ) as progress:
-            task = progress.add_task("Downloading dataset", total=total_size or None)
-            for chunk in response.iter_content(chunk_size=1024 * 64):
-                chunks.append(chunk)
-                progress.update(task, advance=len(chunk))
-
-        return b"".join(chunks)
-
-
-def _download_silently(url: str, status_callback: StatusCallback) -> bytes:
-    """Streams a download while reporting progress via a plain callback instead
-    of a console progress bar (used by the GUI)."""
+def _stream_download(url: str, on_progress: Callable[[int, int], None]) -> bytes:
+    """Streams a download, calling `on_progress(bytes_so_far, total_bytes)` per chunk (total is 0 if unknown)."""
     with requests.get(url, timeout=60, stream=True) as response:
         response.raise_for_status()
         total_size = int(response.headers.get("Content-Length", 0))
@@ -63,13 +35,33 @@ def _download_silently(url: str, status_callback: StatusCallback) -> bytes:
         for chunk in response.iter_content(chunk_size=1024 * 256):
             chunks.append(chunk)
             downloaded += len(chunk)
-            downloaded_mb = downloaded / 1_048_576
-            if total_size:
-                status_callback(f"Downloading dataset... {downloaded_mb:.1f}/{total_size / 1_048_576:.1f} MB")
-            else:
-                status_callback(f"Downloading dataset... {downloaded_mb:.1f} MB")
+            on_progress(downloaded, total_size)
 
         return b"".join(chunks)
+
+
+def _download_with_console_bar(url: str) -> bytes:
+    with Progress(
+        "[progress.description]{task.description}",
+        BarColumn(),
+        DownloadColumn(),
+        TransferSpeedColumn(),
+        TimeRemainingColumn(),
+    ) as progress:
+        task = progress.add_task("Downloading dataset", total=None)
+        return _stream_download(url, lambda done, total: progress.update(task, completed=done, total=total or None))
+
+
+def _download_with_status_messages(url: str, status_callback: StatusCallback) -> bytes:
+    # The GUI runs under pythonw.exe with no stdout, so it can't use rich's console bar.
+    def report(done: int, total: int) -> None:
+        done_mb = done / 1_048_576
+        if total:
+            status_callback(f"Downloading dataset... {done_mb:.1f}/{total / 1_048_576:.1f} MB")
+        else:
+            status_callback(f"Downloading dataset... {done_mb:.1f} MB")
+
+    return _stream_download(url, report)
 
 
 def ensure_raw_data(status_callback: StatusCallback | None = None) -> Path:
@@ -80,7 +72,10 @@ def ensure_raw_data(status_callback: StatusCallback | None = None) -> Path:
 
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     logger.info("Downloading dataset from %s", DATASET_URL)
-    content = _download_silently(DATASET_URL, status_callback) if status_callback else _download_with_progress(DATASET_URL)
+    if status_callback:
+        content = _download_with_status_messages(DATASET_URL, status_callback)
+    else:
+        content = _download_with_console_bar(DATASET_URL)
 
     with zipfile.ZipFile(io.BytesIO(content)) as archive:
         archive.extractall(RAW_DIR)
@@ -132,16 +127,14 @@ def fetch_remote_dataset(url: str, status_callback: StatusCallback | None = None
     looks_like_csv = "csv" in content_type or resolved_url.lower().endswith(".csv")
 
     notify("Reading the downloaded data...")
-    try:
-        df = pd.read_csv(io.BytesIO(response.content)) if looks_like_csv else pd.read_excel(io.BytesIO(response.content))
-    except Exception as exc:
-        raise ValueError(
+    return _read_spreadsheet(
+        io.BytesIO(response.content),
+        is_csv=looks_like_csv,
+        error_message=(
             "Couldn't read that link as a spreadsheet. Make sure it's a direct link to a "
             "CSV or Excel file, or a Google Sheet shared as \"Anyone with the link can view\"."
-        ) from exc
-
-    validate_raw_columns(df)
-    return df
+        ),
+    )
 
 
 def load_local_dataset(path: Path, status_callback: StatusCallback | None = None) -> pd.DataFrame:
@@ -150,11 +143,18 @@ def load_local_dataset(path: Path, status_callback: StatusCallback | None = None
     """
     notify = status_callback or (lambda _msg: None)
     notify(f"Reading {path.name}...")
+    return _read_spreadsheet(
+        path,
+        is_csv=path.suffix.lower() == ".csv",
+        error_message=f"Couldn't read '{path.name}' as a spreadsheet. Make sure it's a valid CSV or Excel file.",
+    )
 
+
+def _read_spreadsheet(source: Path | io.BytesIO, is_csv: bool, error_message: str) -> pd.DataFrame:
     try:
-        df = pd.read_csv(path) if path.suffix.lower() == ".csv" else pd.read_excel(path)
+        df = pd.read_csv(source) if is_csv else pd.read_excel(source)
     except Exception as exc:
-        raise ValueError(f"Couldn't read '{path.name}' as a spreadsheet. Make sure it's a valid CSV or Excel file.") from exc
+        raise ValueError(error_message) from exc
 
     validate_raw_columns(df)
     return df

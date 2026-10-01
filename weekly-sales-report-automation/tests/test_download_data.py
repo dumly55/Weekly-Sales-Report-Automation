@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 import requests
 
-from src.download_data import _normalize_google_sheet_url, fetch_remote_dataset
+from src.download_data import _normalize_google_sheet_url, _stream_download, fetch_remote_dataset
 
 RAW_COLUMNS = "InvoiceNo,StockCode,Description,Quantity,InvoiceDate,UnitPrice,CustomerID,Country"
 
@@ -83,3 +83,18 @@ class TestFetchRemoteDataset:
             fetch_remote_dataset("https://example.com/data.csv", status_callback=messages.append)
 
         assert any("Downloading" in m for m in messages)
+
+
+class TestStreamDownload:
+    def test_joins_chunks_and_reports_cumulative_progress(self):
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.headers = {"Content-Length": "6"}
+        response.iter_content.return_value = [b"abc", b"def"]
+        progress = []
+
+        with patch("src.download_data.requests.get", return_value=response):
+            content = _stream_download("https://example.com/x.zip", lambda done, total: progress.append((done, total)))
+
+        assert content == b"abcdef"
+        assert progress == [(3, 6), (6, 6)]

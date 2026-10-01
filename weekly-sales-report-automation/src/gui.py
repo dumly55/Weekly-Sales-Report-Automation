@@ -15,6 +15,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from .main import describe_error, run_pipeline, setup_logging
+from .report import format_wow
 
 WINDOW_TITLE = "Weekly Sales Report Generator"
 
@@ -176,22 +177,9 @@ class ReportApp:
         tree.tag_configure("good", foreground="#1f7a1f")
         tree.tag_configure("bad", foreground="#c00000")
 
-        def fmt_wow(value):
-            return "n/a" if value is None else f"{value:+.1f}%"
-
-        def wow_tag(value):
-            if value is None:
-                return ""
-            return "good" if value >= 0 else "bad"
-
-        rows = [
-            ("Revenue", f"£{report_data.current['revenue']:,.2f}", f"£{report_data.previous['revenue']:,.2f}", report_data.wow["revenue"]),
-            ("Units Sold", f"{report_data.current['units']:,}", f"{report_data.previous['units']:,}", report_data.wow["units"]),
-            ("Orders", f"{report_data.current['orders']:,}", f"{report_data.previous['orders']:,}", report_data.wow["orders"]),
-            ("Unique Customers", f"{report_data.current['customers']:,}", f"{report_data.previous['customers']:,}", report_data.wow["customers"]),
-        ]
-        for metric, this_week, last_week, wow in rows:
-            tree.insert("", "end", values=(metric, this_week, last_week, fmt_wow(wow)), tags=(wow_tag(wow),))
+        for metric, this_week, last_week, wow in report_data.summary_rows():
+            tag = "" if wow is None else ("good" if wow >= 0 else "bad")
+            tree.insert("", "end", values=(metric, this_week, last_week, format_wow(wow)), tags=(tag,))
 
         tree.pack(fill="x", pady=(0, 12))
 

@@ -98,8 +98,7 @@ def _autofit_first_column(ws: Worksheet, width: int = 22) -> None:
 
 
 def _build_summary_sheet(ws: Worksheet, data: WeeklyReportData) -> None:
-    week_label = f"{data.week_start.date()} to {(data.week_end - pd.Timedelta(days=1)).date()}"
-    _write_title(ws, f"Weekly Sales Report: {week_label}", span_cols=4)
+    _write_title(ws, f"Weekly Sales Report: {data.week_label}", span_cols=4)
     _autofit_first_column(ws)
 
     # (label, this week, last week, wow % change, format kind)
