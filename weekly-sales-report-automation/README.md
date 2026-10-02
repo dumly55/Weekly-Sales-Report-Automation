@@ -1,6 +1,7 @@
 # Weekly Sales Report Automation
 
 [![Tests](https://github.com/dumly55/Weekly-Sales-Report-Automation/actions/workflows/tests.yml/badge.svg)](https://github.com/dumly55/Weekly-Sales-Report-Automation/actions/workflows/tests.yml)
+[![Weekly Report](https://github.com/dumly55/Weekly-Sales-Report-Automation/actions/workflows/weekly-report.yml/badge.svg)](https://github.com/dumly55/Weekly-Sales-Report-Automation/actions/workflows/weekly-report.yml)
 
 Turns a raw, messy e-commerce transaction export into a formatted, ready-to-send weekly Excel report — replacing what would otherwise be a manual, error-prone weekly task in Excel.
 
@@ -80,12 +81,21 @@ pytest
 
 49 tests covering the cleaning rules (`test_clean.py`), KPI/week-boundary math and summary formatting (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
 
-## How this would run in production
+## Scheduled weekly run
 
-In a real job, this would be scheduled to run every Monday morning against the latest export, with the output emailed or dropped into a shared drive. On Windows that's a one-line Task Scheduler entry:
+The report generates itself every Monday at 06:00 UTC via GitHub Actions ([`weekly-report.yml`](../.github/workflows/weekly-report.yml)), with no one pressing a button. Each run:
+
+1. Installs the project and restores the cached demo dataset (downloaded only on the first run).
+2. Runs the full pipeline for the latest week in the data.
+3. Shows the KPI table on the run's summary page.
+4. Attaches the Excel report and run log as a downloadable artifact (kept for 90 days).
+
+See past runs, or trigger one on demand with **Run workflow**, on the repo's **Actions** tab under **Weekly Report**.
+
+Since the demo dataset is historical, each week's report has the same numbers. The schedule is what's being demonstrated. Pointed at a live export via `--data-url`, the same workflow would report on fresh data every week.
+
+To run it on a local Windows machine instead, it's a one-line Task Scheduler entry:
 
 ```powershell
-schtasks /create /tn "WeeklySalesReport" /tr "python -m src.main --as-of-date %date%" /sc weekly /d MON /st 06:00
+schtasks /create /tn "WeeklySalesReport" /tr "python -m src.main" /sc weekly /d MON /st 06:00
 ```
-
-(or an equivalent cron entry / Airflow DAG in a Linux/cloud environment). Not set up here since it's a portfolio demo, not a live job — but the pipeline is written to be trivially droppable into a scheduler as-is.

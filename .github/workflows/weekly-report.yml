@@ -1,0 +1,51 @@
+name: Weekly Report
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Every Monday at 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: weekly-sales-report-automation
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: weekly-sales-report-automation/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore cached demo dataset
+        uses: actions/cache@v4
+        with:
+          path: weekly-sales-report-automation/data/raw
+          key: uci-online-retail-v1
+
+      - name: Generate report
+        run: python -m src.main --markdown-summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report and log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-sales-report
+          path: |
+            weekly-sales-report-automation/output/*.xlsx
+            weekly-sales-report-automation/logs/*.log
+          if-no-files-found: warn
+          retention-days: 90
