@@ -199,6 +199,7 @@ def _build_quality_log_sheet(ws: Worksheet, quality_log: QualityLog) -> None:
     descriptions = {
         "rows_in": "Raw rows read from source export",
         "duplicates_dropped": "Exact duplicate rows removed",
+        "unreadable_rows_dropped": "Rows dropped because the date, quantity or price couldn't be read",
         "cancellations_separated": "Cancelled-order lines separated into returns reporting",
         "missing_customer_id": "Sales rows with a missing CustomerID (kept, revenue still counted)",
         "non_positive_price_dropped": "Non-product / adjustment rows dropped (zero or negative price/qty)",

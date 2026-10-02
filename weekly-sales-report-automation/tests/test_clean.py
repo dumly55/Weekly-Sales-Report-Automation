@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 
 from src.clean import clean_transactions
+from src.normalize import to_number
 
 
 @pytest.fixture
@@ -63,6 +64,55 @@ def test_line_total_is_computed(raw_df):
     sales, _, _ = clean_transactions(raw_df)
     row = sales[sales["StockCode"] == "85123A"].iloc[0]
     assert row["LineTotal"] == pytest.approx(6 * 2.55)
+
+
+def test_clean_data_has_no_unreadable_rows(raw_df):
+    _, _, quality_log = clean_transactions(raw_df)
+    assert quality_log.unreadable_rows_dropped == 0
+
+
+def test_messy_text_values_are_parsed():
+    messy = pd.DataFrame(
+        {
+            "InvoiceNo": ["1", "2", "3", "4"],
+            "StockCode": ["A", "B", "C", "D"],
+            "Description": ["a", "b", "c", "d"],
+            "Quantity": ["2", "1,000", " 3 ", "1"],
+            "InvoiceDate": ["2024-01-15 10:00", "01/16/2024", "Jan 17, 2024", "2024-01-18"],
+            "UnitPrice": ["$1,200.00", "£0.50", "4", "€2.25"],
+            "CustomerID": [1, 2, 3, 4],
+            "Country": ["US", "US", "US", "US"],
+        }
+    )
+    sales, _, quality_log = clean_transactions(messy)
+
+    assert quality_log.unreadable_rows_dropped == 0
+    assert list(sales["Quantity"]) == [2, 1000, 3, 1]
+    assert list(sales["UnitPrice"]) == pytest.approx([1200.0, 0.5, 4.0, 2.25])
+    assert [d.date().isoformat() for d in sales["InvoiceDate"]] == ["2024-01-15", "2024-01-16", "2024-01-17", "2024-01-18"]
+
+
+def test_unreadable_rows_are_dropped_and_counted():
+    messy = pd.DataFrame(
+        {
+            "InvoiceNo": ["1", "2", "3"],
+            "StockCode": ["A", "B", "C"],
+            "Description": ["a", "b", "c"],
+            "Quantity": ["2", "lots", "1"],
+            "InvoiceDate": ["2024-01-15", "2024-01-16", "not a date"],
+            "UnitPrice": ["5.00", "5.00", "5.00"],
+            "CustomerID": [1, 2, 3],
+            "Country": ["US", "US", "US"],
+        }
+    )
+    sales, _, quality_log = clean_transactions(messy)
+
+    assert quality_log.unreadable_rows_dropped == 2
+    assert list(sales["InvoiceNo"]) == ["1"]
+
+
+def test_accounting_negative_is_parsed_as_negative():
+    assert to_number(pd.Series(["(15.00)"])).iloc[0] == pytest.approx(-15.0)
 
 
 def test_row_counts_are_consistent(raw_df):

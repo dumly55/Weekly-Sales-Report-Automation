@@ -30,6 +30,7 @@ def quality_log():
     return QualityLog(
         rows_in=100,
         duplicates_dropped=2,
+        unreadable_rows_dropped=1,
         cancellations_separated=3,
         missing_customer_id=1,
         non_positive_price_dropped=4,

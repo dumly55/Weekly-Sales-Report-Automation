@@ -6,6 +6,8 @@ from typing import NamedTuple
 
 import pandas as pd
 
+from .normalize import to_datetime, to_number
+
 logger = logging.getLogger(__name__)
 
 RAW_COLUMNS = [
@@ -23,6 +25,7 @@ RAW_COLUMNS = [
 class QualityLog(NamedTuple):
     rows_in: int
     duplicates_dropped: int
+    unreadable_rows_dropped: int
     cancellations_separated: int
     missing_customer_id: int
     non_positive_price_dropped: int
@@ -59,8 +62,15 @@ def clean_transactions(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, Qu
     working = df.drop_duplicates()
     duplicates_dropped = rows_in - len(working)
 
-    working["InvoiceDate"] = pd.to_datetime(working["InvoiceDate"])
-    working["InvoiceNo"] = working["InvoiceNo"].astype(str)
+    working = working.assign(
+        InvoiceDate=to_datetime(working["InvoiceDate"]),
+        Quantity=to_number(working["Quantity"]),
+        UnitPrice=to_number(working["UnitPrice"]),
+        InvoiceNo=working["InvoiceNo"].astype(str),
+    )
+    is_unreadable = working[["InvoiceDate", "Quantity", "UnitPrice"]].isna().any(axis=1)
+    unreadable_rows_dropped = int(is_unreadable.sum())
+    working = working[~is_unreadable]
 
     is_cancellation = working["InvoiceNo"].str.startswith("C")
     cancellations_df = working[is_cancellation].copy()
@@ -81,6 +91,7 @@ def clean_transactions(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, Qu
     quality_log = QualityLog(
         rows_in=rows_in,
         duplicates_dropped=duplicates_dropped,
+        unreadable_rows_dropped=unreadable_rows_dropped,
         cancellations_separated=cancellations_separated,
         missing_customer_id=missing_customer_id,
         non_positive_price_dropped=non_positive_price_dropped,
