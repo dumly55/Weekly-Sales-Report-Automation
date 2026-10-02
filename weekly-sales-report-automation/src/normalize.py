@@ -76,14 +76,45 @@ def match_columns(columns: list, column_map: dict[str, str] | None = None) -> di
     return mapping
 
 
+HEADER_SEARCH_ROWS = 10
+
+
+def _match_if_usable(columns: list, column_map: dict[str, str] | None) -> dict[str, str] | None:
+    try:
+        mapping = match_columns(columns, column_map)
+    except ValueError:
+        return None
+    has_required = "date" in mapping and ("unit_price" in mapping or "line_total" in mapping)
+    return mapping if has_required else None
+
+
+def _find_header(df: pd.DataFrame, column_map: dict[str, str] | None) -> tuple[pd.DataFrame, dict[str, str]]:
+    mapping = _match_if_usable(list(df.columns), column_map)
+    if mapping is not None:
+        return df, mapping
+
+    for i in range(min(HEADER_SEARCH_ROWS, len(df))):
+        header = [str(v).strip() if pd.notna(v) else f"Unnamed {n}" for n, v in enumerate(df.iloc[i])]
+        mapping = _match_if_usable(header, column_map)
+        if mapping is not None:
+            logger.info("Skipped title/note rows above the real header row: %s", header)
+            return df.iloc[i + 1 :].set_axis(header, axis=1).reset_index(drop=True), mapping
+
+    # No usable header anywhere: match the original columns again so the caller reports what's missing.
+    return df, match_columns(list(df.columns), column_map)
+
+
 def standardize(df: pd.DataFrame, column_map: dict[str, str] | None = None) -> tuple[pd.DataFrame, dict[str, str]]:
     """Maps a sheet's own columns onto the pipeline's columns, filling in sensible defaults for
     anything optional that's missing. Returns (standardized_df, {field: sheet column used}).
 
     Only a date and either a unit price or a line total are required. `column_map`
     ({field: sheet column}) overrides automatic matching for the fields it names.
+    If the first row isn't the header (e.g. a title row sits above it), the next few
+    rows are searched for one that is.
     """
-    mapping = match_columns(list(df.columns), column_map)
+    df = df.dropna(how="all")
+    df, mapping = _find_header(df, column_map)
 
     missing = []
     if "date" not in mapping:

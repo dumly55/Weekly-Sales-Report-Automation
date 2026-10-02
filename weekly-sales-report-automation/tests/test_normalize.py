@@ -112,6 +112,34 @@ class TestStandardize:
         assert out.loc[0, "StockCode"] == "Mug"
         assert out.loc[0, "Description"] == "Mug"
 
+    def test_finds_header_below_title_and_blank_rows(self):
+        # How a sheet with a title block reads in: pandas takes the title as the header row.
+        sheet = pd.DataFrame(
+            [
+                [None, None, None],
+                ["Order Date", "Item", "Sales"],
+                ["2024-01-15", "Mug", "$10.00"],
+                ["2024-01-16", "Pen", "$2.50"],
+                [None, "Grand Total", "$12.50"],
+            ],
+            columns=["Acme Co. Weekly Sales", "Unnamed: 1", "Unnamed: 2"],
+        )
+        out, mapping = standardize(sheet)
+
+        assert mapping == {"date": "Order Date", "product": "Item", "line_total": "Sales"}
+        assert list(out["Description"]) == ["Mug", "Pen", "Grand Total"]
+
+        sales, _, quality_log = clean_transactions(out)
+        assert list(sales["Description"]) == ["Mug", "Pen"], "the dateless total row is dropped"
+        assert quality_log.unreadable_rows_dropped == 1
+
+    def test_blank_rows_are_ignored_not_counted_as_unreadable(self):
+        sheet = pd.DataFrame({"Date": ["2024-01-15", None, "2024-01-16"], "Price": [1.0, None, 2.0]})
+        out, _ = standardize(sheet)
+        _, _, quality_log = clean_transactions(out)
+        assert quality_log.rows_in == 2
+        assert quality_log.unreadable_rows_dropped == 0
+
     def test_missing_required_columns_raises_friendly_error(self):
         sheet = pd.DataFrame({"Foo": [1], "Bar": [2]})
         with pytest.raises(ValueError, match=r"Couldn't find a column for: date, unit_price \(or line_total\)\. The sheet's columns are: Foo, Bar"):
