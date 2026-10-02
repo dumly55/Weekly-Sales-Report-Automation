@@ -99,6 +99,17 @@ class WeeklyReportData:
             ("Unique Customers", f"{c['customers']:,}", f"{p['customers']:,}", self.wow["customers"]),
         ]
 
+    def summary_markdown(self) -> str:
+        lines = [
+            f"## Weekly Sales Report: {self.week_label}",
+            "",
+            "| Metric | This Week | Last Week | WoW % Change |",
+            "|---|--:|--:|--:|",
+        ]
+        for metric, this_week, last_week, wow in self.summary_rows():
+            lines.append(f"| {metric} | {this_week} | {last_week} | {format_wow(wow)} |")
+        return "\n".join(lines) + "\n"
+
 
 def format_wow(value: float | None) -> str:
     return "n/a" if value is None else f"{value:+.1f}%"

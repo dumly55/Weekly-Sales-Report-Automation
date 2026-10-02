@@ -204,6 +204,13 @@ class TestDisplayHelpers:
             ("Unique Customers", "2", "1", pytest.approx(100.0)),
         ]
 
+    def test_summary_markdown_is_a_table(self, sales_df, cancellations_df):
+        data = build_report_data(sales_df, cancellations_df, AS_OF_DATE)
+        markdown = data.summary_markdown()
+        assert markdown.startswith("## Weekly Sales Report: 2011-11-21 to 2011-11-27\n")
+        assert "| Revenue | £180.00 | £100.00 | +80.0% |" in markdown
+        assert "| Unique Customers | 2 | 1 | +100.0% |" in markdown
+
     def test_format_wow(self):
         assert format_wow(2.567) == "+2.6%"
         assert format_wow(-0.1) == "-0.1%"

@@ -54,6 +54,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional: path to a local CSV/Excel file to use instead of the built-in demo dataset. Takes priority over --data-url.",
     )
+    parser.add_argument(
+        "--markdown-summary",
+        default=None,
+        help="Optional: append the KPI summary as a Markdown table to this file (e.g. $GITHUB_STEP_SUMMARY in CI).",
+    )
     return parser.parse_args()
 
 
@@ -186,6 +191,10 @@ def main() -> None:
                 f"[yellow]Warning:[/yellow] no transactions found for the week of {report_data.week_label}. "
                 "The report will still be generated, but it will be empty."
             )
+
+        if args.markdown_summary:
+            with open(args.markdown_summary, "a", encoding="utf-8") as summary_file:
+                summary_file.write(report_data.summary_markdown())
 
     except Exception as exc:
         logger.exception("Report generation failed")
