@@ -46,6 +46,13 @@ def test_cancellations_are_separated_not_in_sales(raw_df):
     assert cancellations.iloc[0]["InvoiceNo"] == "C536366"
 
 
+def test_order_ids_starting_with_c_but_not_c_digit_are_sales(raw_df):
+    raw_df.loc[0, "InvoiceNo"] = "CA-2016-152156"
+    sales, cancellations, _ = clean_transactions(raw_df)
+    assert "CA-2016-152156" in sales["InvoiceNo"].values
+    assert "CA-2016-152156" not in cancellations["InvoiceNo"].values
+
+
 def test_missing_customer_id_is_flagged_but_kept(raw_df):
     sales, _, quality_log = clean_transactions(raw_df)
     assert quality_log.missing_customer_id == 1

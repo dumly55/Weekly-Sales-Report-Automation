@@ -46,6 +46,23 @@ The data-source field accepts:
 - A Google Sheet shared as **"Anyone with the link can view"** (rewritten automatically to its CSV export link)
 - Left blank: uses the built-in demo dataset described below
 
+## Using your own sales data
+
+Your sheet doesn't need to match the demo dataset's layout. Columns are recognized by common names, ignoring case, spaces and punctuation:
+
+| Field | Recognized names include | Required? | If missing |
+|---|---|---|---|
+| date | Date, Order Date, Invoice Date, Transaction Date, Timestamp | Yes | — |
+| unit_price | Price, Unit Price, Price Each, Unit Cost | One of these two | Worked out as line_total ÷ quantity |
+| line_total | Total, Amount, Sales, Revenue, Subtotal | | |
+| quantity | Quantity, Qty, Units, Units Sold | No | Each row counts as 1 unit |
+| order_id | Order ID, Invoice, Order Number, Transaction ID | No | Each row counts as its own order |
+| product / product_code | Product, Item, Product Name / SKU, Product ID, Item Code | No | Fill in for each other, else "Unknown product" |
+| customer | Customer ID, Customer, Client | No | Unique customers can't be counted |
+| country | Country, Region, Market | No | "Unknown" |
+
+Values stored as text are also handled: amounts like `$1,200.00` or `(15.00)`, and dates in mixed formats. Rows whose date, quantity or price still can't be read are dropped and counted in the report's Data Quality Log sheet.
+
 ## Run (command line)
 
 ```bash
@@ -79,7 +96,7 @@ If a date has no matching transactions, or if the download/input data fails, the
 pytest
 ```
 
-49 tests covering the cleaning rules (`test_clean.py`), KPI/week-boundary math and summary formatting (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
+61 tests covering the cleaning rules and messy-value parsing (`test_clean.py`), column recognition for differently shaped sheets (`test_normalize.py`), KPI/week-boundary math and summary formatting (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
 
 ## Scheduled weekly run
 

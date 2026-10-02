@@ -58,13 +58,6 @@ class TestFetchRemoteDataset:
         called_url = mock_get.call_args[0][0]
         assert called_url == "https://docs.google.com/spreadsheets/d/ABC123/export?format=csv&gid=0"
 
-    def test_missing_columns_raises_friendly_error(self):
-        csv_bytes = b"Foo,Bar\n1,2\n"
-
-        with patch("src.download_data.requests.get", return_value=_mock_response(csv_bytes, "text/csv")):
-            with pytest.raises(ValueError, match="missing expected columns"):
-                fetch_remote_dataset("https://example.com/data.csv")
-
     def test_unparseable_content_raises_friendly_error(self):
         with patch("src.download_data.requests.get", return_value=_mock_response(b"not a spreadsheet", "text/html")):
             with pytest.raises(ValueError, match="Couldn't read that link"):

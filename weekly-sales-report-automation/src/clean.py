@@ -1,4 +1,4 @@
-"""Cleaning and validation for the raw Online Retail transaction export."""
+"""Cleaning and validation for sales rows, after `normalize.standardize` has mapped their columns."""
 
 import logging
 from pathlib import Path
@@ -9,17 +9,6 @@ import pandas as pd
 from .normalize import to_datetime, to_number
 
 logger = logging.getLogger(__name__)
-
-RAW_COLUMNS = [
-    "InvoiceNo",
-    "StockCode",
-    "Description",
-    "Quantity",
-    "InvoiceDate",
-    "UnitPrice",
-    "CustomerID",
-    "Country",
-]
 
 
 class QualityLog(NamedTuple):
@@ -32,21 +21,8 @@ class QualityLog(NamedTuple):
     rows_out: int
 
 
-def validate_raw_columns(df: pd.DataFrame) -> None:
-    """Raises a friendly ValueError if any expected column is missing.
-
-    Shared by both the built-in demo dataset loader and the custom data-link
-    loader, so a malformed file gives the same clear error either way.
-    """
-    missing = set(RAW_COLUMNS) - set(df.columns)
-    if missing:
-        raise ValueError(f"Data is missing expected columns: {sorted(missing)}")
-
-
 def load_raw(path: Path) -> pd.DataFrame:
-    df = pd.read_excel(path, sheet_name=0)
-    validate_raw_columns(df)
-    return df
+    return pd.read_excel(path, sheet_name=0)
 
 
 def clean_transactions(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, QualityLog]:
@@ -72,7 +48,9 @@ def clean_transactions(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, Qu
     unreadable_rows_dropped = int(is_unreadable.sum())
     working = working[~is_unreadable]
 
-    is_cancellation = working["InvoiceNo"].str.startswith("C")
+    # "C" followed by digits (e.g. "C536379") marks a cancelled invoice. A bare "C" prefix
+    # would also catch ordinary order IDs like "CA-2016-152156".
+    is_cancellation = working["InvoiceNo"].str.match(r"C\d")
     cancellations_df = working[is_cancellation].copy()
     cancellations_df["LineTotal"] = cancellations_df["Quantity"] * cancellations_df["UnitPrice"]
     cancellations_separated = len(cancellations_df)

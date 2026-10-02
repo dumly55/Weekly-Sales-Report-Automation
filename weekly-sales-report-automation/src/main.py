@@ -17,6 +17,7 @@ from rich.table import Table
 from .clean import QualityLog, clean_transactions, load_raw
 from .download_data import StatusCallback, ensure_raw_data, fetch_remote_dataset, load_local_dataset
 from .excel_report import build_workbook
+from .normalize import standardize
 from .report import WeeklyReportData, build_report_data, format_wow, latest_sales_date
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -138,6 +139,9 @@ def run_pipeline(
         raw_path = ensure_raw_data(status_callback=status_callback)
         notify("Loading dataset...")
         raw_df = load_raw(raw_path)
+
+    notify("Matching the sheet's columns...")
+    raw_df, _ = standardize(raw_df)
 
     notify("Cleaning and validating data...")
     sales_df, cancellations_df, quality_log = clean_transactions(raw_df)

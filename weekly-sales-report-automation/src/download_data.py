@@ -13,8 +13,6 @@ import pandas as pd
 import requests
 from rich.progress import BarColumn, DownloadColumn, Progress, TimeRemainingColumn, TransferSpeedColumn
 
-from .clean import validate_raw_columns
-
 DATASET_URL = "https://archive.ics.uci.edu/static/public/352/online+retail.zip"
 RAW_DIR = Path(__file__).resolve().parent.parent / "data" / "raw"
 RAW_FILE = RAW_DIR / "Online Retail.xlsx"
@@ -152,12 +150,9 @@ def load_local_dataset(path: Path, status_callback: StatusCallback | None = None
 
 def _read_spreadsheet(source: Path | io.BytesIO, is_csv: bool, error_message: str) -> pd.DataFrame:
     try:
-        df = pd.read_csv(source) if is_csv else pd.read_excel(source)
+        return pd.read_csv(source) if is_csv else pd.read_excel(source)
     except Exception as exc:
         raise ValueError(error_message) from exc
-
-    validate_raw_columns(df)
-    return df
 
 
 if __name__ == "__main__":
