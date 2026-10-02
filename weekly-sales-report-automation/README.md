@@ -85,14 +85,14 @@ pytest
 
 The report generates itself every Monday at 06:00 UTC via GitHub Actions ([`weekly-report.yml`](../.github/workflows/weekly-report.yml)), with no one pressing a button. Each run:
 
-1. Installs the project and restores the cached demo dataset (downloaded only on the first run).
+1. Installs the project and fetches the data: the Google Sheet or file at the `DATA_URL` repository variable if one is set, otherwise the cached demo dataset.
 2. Runs the full pipeline for the latest week in the data.
 3. Shows the KPI table on the run's summary page.
 4. Attaches the Excel report and run log as a downloadable artifact (kept for 90 days).
 
 See past runs, or trigger one on demand with **Run workflow**, on the repo's **Actions** tab under **Weekly Report**.
 
-Since the demo dataset is historical, each week's report has the same numbers. The schedule is what's being demonstrated. Pointed at a live export via `--data-url`, the same workflow would report on fresh data every week.
+**Pointing it at a live sheet:** in the repo, go to **Settings → Secrets and variables → Actions → Variables → New repository variable**, name it `DATA_URL`, and paste a Google Sheet link (shared as "Anyone with the link can view") or a direct CSV/Excel link. Each Monday's run then reads the sheet as it is at that moment, so edits made during the week show up in that week's report. Without `DATA_URL`, it uses the historical demo dataset, so every week's numbers are the same.
 
 To run it on a local Windows machine instead, it's a one-line Task Scheduler entry:
 

@@ -31,13 +31,22 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Restore cached demo dataset
+        if: vars.DATA_URL == ''
         uses: actions/cache@v4
         with:
           path: weekly-sales-report-automation/data/raw
           key: uci-online-retail-v1
 
+      # Reads the sheet/file at the DATA_URL repository variable if set, otherwise the demo dataset.
       - name: Generate report
-        run: python -m src.main --markdown-summary "$GITHUB_STEP_SUMMARY"
+        env:
+          DATA_URL: ${{ vars.DATA_URL }}
+        run: |
+          if [ -n "$DATA_URL" ]; then
+            python -m src.main --data-url "$DATA_URL" --markdown-summary "$GITHUB_STEP_SUMMARY"
+          else
+            python -m src.main --markdown-summary "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload report and log
         if: always()
