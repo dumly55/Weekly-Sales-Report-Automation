@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from src.clean import clean_transactions
-from src.normalize import match_columns, standardize
+from src.normalize import match_columns, parse_column_map, standardize
 
 UCI_COLUMNS = ["InvoiceNo", "StockCode", "Description", "Quantity", "InvoiceDate", "UnitPrice", "CustomerID", "Country"]
 
@@ -34,6 +34,38 @@ class TestMatchColumns:
 
     def test_unrecognized_columns_are_left_out(self):
         assert match_columns(["Ship Mode", "Discount"]) == {}
+
+
+class TestParseColumnMap:
+    def test_parses_pairs_separated_by_commas_semicolons_or_newlines(self):
+        result = parse_column_map("date=Placed On; line_total = Net Sales\nCustomer=Buyer Email,")
+        assert result == {"date": "Placed On", "line_total": "Net Sales", "customer": "Buyer Email"}
+
+    def test_unknown_field_raises_friendly_error(self):
+        with pytest.raises(ValueError, match='Unknown field "when"'):
+            parse_column_map("when=Placed On")
+
+    def test_entry_without_equals_raises_friendly_error(self):
+        with pytest.raises(ValueError, match="should look like field=Column Name"):
+            parse_column_map("date Placed On")
+
+
+class TestColumnMapOverrides:
+    def test_fills_in_columns_that_arent_recognized(self):
+        sheet = pd.DataFrame({"Placed On": ["2024-01-15"], "Net": ["$9.50"]})
+        out, mapping = standardize(sheet, {"date": "Placed On", "line_total": "Net"})
+        assert mapping == {"date": "Placed On", "line_total": "Net"}
+        assert out.loc[0, "UnitPrice"] == pytest.approx(9.5)
+
+    def test_overrides_automatic_choice_and_is_case_insensitive(self):
+        sheet = pd.DataFrame({"Date": ["2024-01-15"], "Ship Date": ["2024-01-20"], "Price": [1.0]})
+        _, mapping = standardize(sheet, {"date": "ship date"})
+        assert mapping["date"] == "Ship Date"
+
+    def test_mapped_column_not_in_sheet_raises_friendly_error(self):
+        sheet = pd.DataFrame({"Date": ["2024-01-15"], "Price": [1.0]})
+        with pytest.raises(ValueError, match='date="Placed On", but the sheet has no such column'):
+            standardize(sheet, {"date": "Placed On"})
 
 
 class TestStandardize:

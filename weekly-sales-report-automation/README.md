@@ -63,6 +63,14 @@ Your sheet doesn't need to match the demo dataset's layout. Columns are recogniz
 
 Values stored as text are also handled: amounts like `$1,200.00` or `(15.00)`, and dates in mixed formats. Rows whose date, quantity or price still can't be read are dropped and counted in the report's Data Quality Log sheet.
 
+**When a column isn't recognized** (or the wrong one is picked), add a column map naming your sheet's columns, using the field names from the table above:
+
+```bash
+python -m src.main --data-url "<link>" --column-map "date=Placed On, line_total=Net Sales, customer=Buyer"
+```
+
+For the scheduled GitHub run, put the same text in a `COLUMN_MAP` repository variable (next to `DATA_URL`). Fields you leave out are still matched automatically.
+
 ## Run (command line)
 
 ```bash
@@ -96,7 +104,7 @@ If a date has no matching transactions, or if the download/input data fails, the
 pytest
 ```
 
-61 tests covering the cleaning rules and messy-value parsing (`test_clean.py`), column recognition for differently shaped sheets (`test_normalize.py`), KPI/week-boundary math and summary formatting (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
+67 tests covering the cleaning rules and messy-value parsing (`test_clean.py`), column recognition for differently shaped sheets (`test_normalize.py`), KPI/week-boundary math and summary formatting (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
 
 ## Scheduled weekly run
 

@@ -30,15 +30,43 @@ def _simplify(header: object) -> str:
     return re.sub(r"[^a-z0-9]", "", str(header).lower())
 
 
-def match_columns(columns: list) -> dict[str, str]:
-    """Returns {field: sheet column} for every field whose column could be recognized by name."""
+def parse_column_map(text: str) -> dict[str, str]:
+    """Parses "date=Order Placed, line_total=Net Sales" (commas, semicolons or newlines between pairs)."""
+    column_map: dict[str, str] = {}
+    for pair in re.split(r"[,;\n]", text):
+        if not pair.strip():
+            continue
+        field, sep, column = pair.partition("=")
+        field, column = field.strip().lower(), column.strip()
+        if not sep or not column:
+            raise ValueError(f'Column map entry "{pair.strip()}" should look like field=Column Name.')
+        if field not in FIELDS:
+            raise ValueError(f'Unknown field "{field}" in column map. Fields are: {", ".join(FIELDS)}.')
+        column_map[field] = column
+    return column_map
+
+
+def match_columns(columns: list, column_map: dict[str, str] | None = None) -> dict[str, str]:
+    """Returns {field: sheet column}: the user's `column_map` first, then every other field whose
+    column could be recognized by name."""
+    mapping: dict[str, str] = {}
+    for field, column in (column_map or {}).items():
+        matches = [c for c in columns if str(c).strip().lower() == column.lower()]
+        if not matches:
+            raise ValueError(
+                f'Column map says {field}="{column}", but the sheet has no such column. '
+                f"The sheet's columns are: {', '.join(str(c) for c in columns)}."
+            )
+        mapping[field] = matches[0]
+
     by_simple_name: dict[str, str] = {}
     for column in columns:
         by_simple_name.setdefault(_simplify(column), column)
 
-    mapping: dict[str, str] = {}
-    used: set[str] = set()
+    used = set(mapping.values())
     for field, (_, aliases) in FIELDS.items():
+        if field in mapping:
+            continue
         for alias in aliases:
             column = by_simple_name.get(alias)
             if column is not None and column not in used:
@@ -48,13 +76,14 @@ def match_columns(columns: list) -> dict[str, str]:
     return mapping
 
 
-def standardize(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, str]]:
+def standardize(df: pd.DataFrame, column_map: dict[str, str] | None = None) -> tuple[pd.DataFrame, dict[str, str]]:
     """Maps a sheet's own columns onto the pipeline's columns, filling in sensible defaults for
     anything optional that's missing. Returns (standardized_df, {field: sheet column used}).
 
-    Only a date and either a unit price or a line total are required.
+    Only a date and either a unit price or a line total are required. `column_map`
+    ({field: sheet column}) overrides automatic matching for the fields it names.
     """
-    mapping = match_columns(list(df.columns))
+    mapping = match_columns(list(df.columns), column_map)
 
     missing = []
     if "date" not in mapping:
@@ -64,7 +93,8 @@ def standardize(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, str]]:
     if missing:
         raise ValueError(
             f"Couldn't find a column for: {', '.join(missing)}. "
-            f"The sheet's columns are: {', '.join(str(c) for c in df.columns)}."
+            f"The sheet's columns are: {', '.join(str(c) for c in df.columns)}. "
+            'Add a column map to point at the right ones, e.g. "date=Order Placed, line_total=Net Sales".'
         )
 
     def column(field: str) -> pd.Series:

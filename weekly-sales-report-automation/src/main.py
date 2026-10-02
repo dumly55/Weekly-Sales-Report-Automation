@@ -17,7 +17,7 @@ from rich.table import Table
 from .clean import QualityLog, clean_transactions, load_raw
 from .download_data import StatusCallback, ensure_raw_data, fetch_remote_dataset, load_local_dataset
 from .excel_report import build_workbook
-from .normalize import standardize
+from .normalize import parse_column_map, standardize
 from .report import WeeklyReportData, build_report_data, format_wow, latest_sales_date
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -32,6 +32,13 @@ def _parse_date(value: str) -> date:
         return datetime.strptime(value, "%Y-%m-%d").date()
     except ValueError as exc:
         raise argparse.ArgumentTypeError(f"'{value}' is not a valid date - use YYYY-MM-DD (e.g. 2011-11-28)") from exc
+
+
+def _parse_column_map(value: str) -> dict[str, str]:
+    try:
+        return parse_column_map(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,6 +61,15 @@ def parse_args() -> argparse.Namespace:
         "--data-file",
         default=None,
         help="Optional: path to a local CSV/Excel file to use instead of the built-in demo dataset. Takes priority over --data-url.",
+    )
+    parser.add_argument(
+        "--column-map",
+        default=None,
+        type=_parse_column_map,
+        help=(
+            'Optional: tell the report which of your sheet\'s columns to use, e.g. "date=Order Placed, line_total=Net Sales". '
+            "Only needed when automatic column recognition misses or picks the wrong column."
+        ),
     )
     parser.add_argument(
         "--markdown-summary",
@@ -115,6 +131,7 @@ def run_pipeline(
     as_of_date: date | None,
     data_url: str | None = None,
     data_file: str | Path | None = None,
+    column_map: dict[str, str] | None = None,
     status_callback: StatusCallback | None = None,
 ) -> tuple[WeeklyReportData, QualityLog, Path]:
     """Runs the full pipeline (fetch -> clean -> compute KPIs -> build workbook)
@@ -141,7 +158,7 @@ def run_pipeline(
         raw_df = load_raw(raw_path)
 
     notify("Matching the sheet's columns...")
-    raw_df, _ = standardize(raw_df)
+    raw_df, _ = standardize(raw_df, column_map)
 
     notify("Cleaning and validating data...")
     sales_df, cancellations_df, quality_log = clean_transactions(raw_df)
@@ -188,7 +205,9 @@ def main() -> None:
     logger.info("Starting weekly report run for as-of date %s", args.as_of_date or "latest week in the data")
 
     try:
-        report_data, quality_log, out_path = run_pipeline(args.as_of_date, data_url=args.data_url, data_file=args.data_file)
+        report_data, quality_log, out_path = run_pipeline(
+            args.as_of_date, data_url=args.data_url, data_file=args.data_file, column_map=args.column_map
+        )
 
         if report_data.current["orders"] == 0:
             console.print(

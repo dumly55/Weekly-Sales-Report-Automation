@@ -38,15 +38,16 @@ jobs:
           key: uci-online-retail-v1
 
       # Reads the sheet/file at the DATA_URL repository variable if set, otherwise the demo dataset.
+      # COLUMN_MAP (optional) points at the right columns when automatic recognition can't.
       - name: Generate report
         env:
           DATA_URL: ${{ vars.DATA_URL }}
+          COLUMN_MAP: ${{ vars.COLUMN_MAP }}
         run: |
-          if [ -n "$DATA_URL" ]; then
-            python -m src.main --data-url "$DATA_URL" --markdown-summary "$GITHUB_STEP_SUMMARY"
-          else
-            python -m src.main --markdown-summary "$GITHUB_STEP_SUMMARY"
-          fi
+          args=(--markdown-summary "$GITHUB_STEP_SUMMARY")
+          if [ -n "$DATA_URL" ]; then args+=(--data-url "$DATA_URL"); fi
+          if [ -n "$COLUMN_MAP" ]; then args+=(--column-map "$COLUMN_MAP"); fi
+          python -m src.main "${args[@]}"
 
       - name: Upload report and log
         if: always()
