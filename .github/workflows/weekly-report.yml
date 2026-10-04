@@ -39,14 +39,17 @@ jobs:
 
       # Reads the sheet/file at the DATA_URL repository variable if set, otherwise the demo dataset.
       # COLUMN_MAP (optional) points at the right columns when automatic recognition can't.
+      # CURRENCY (optional) sets the symbol shown on amounts instead of detecting it.
       - name: Generate report
         env:
           DATA_URL: ${{ vars.DATA_URL }}
           COLUMN_MAP: ${{ vars.COLUMN_MAP }}
+          CURRENCY: ${{ vars.CURRENCY }}
         run: |
           args=(--markdown-summary "$GITHUB_STEP_SUMMARY")
           if [ -n "$DATA_URL" ]; then args+=(--data-url "$DATA_URL"); fi
           if [ -n "$COLUMN_MAP" ]; then args+=(--column-map "$COLUMN_MAP"); fi
+          if [ -n "$CURRENCY" ]; then args+=(--currency "$CURRENCY"); fi
           python -m src.main "${args[@]}"
 
       - name: Upload report and log

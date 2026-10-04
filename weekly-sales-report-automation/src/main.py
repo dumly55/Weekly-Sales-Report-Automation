@@ -73,6 +73,14 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--currency",
+        default=None,
+        help=(
+            'Optional: currency symbol to show on amounts, e.g. "$" or "€". By default it\'s detected from '
+            "amounts like \"$1,200.00\" in your data (Excel files usually store plain numbers, so set it there)."
+        ),
+    )
+    parser.add_argument(
         "--markdown-summary",
         default=None,
         help="Optional: append the KPI summary as a Markdown table to this file (e.g. $GITHUB_STEP_SUMMARY in CI).",
@@ -133,6 +141,7 @@ def run_pipeline(
     data_url: str | None = None,
     data_file: str | Path | None = None,
     column_map: dict[str, str] | None = None,
+    currency: str | None = None,
     status_callback: StatusCallback | None = None,
 ) -> tuple[WeeklyReportData, QualityLog, Path]:
     """Runs the full pipeline (fetch -> clean -> compute KPIs -> build workbook)
@@ -141,7 +150,8 @@ def run_pipeline(
 
     `data_file` (a local path) takes priority over `data_url` (a link), which
     takes priority over the built-in demo dataset. If `as_of_date` is None, the
-    latest week that has sales in the data is reported. `status_callback`, if given,
+    latest week that has sales in the data is reported. `currency` overrides the
+    symbol otherwise detected from the data. `status_callback`, if given,
     receives a short human-readable string at each stage instead of the CLI's
     console/log output.
     """
@@ -153,13 +163,15 @@ def run_pipeline(
             raw_df = load_local_dataset(Path(data_file), status_callback=status_callback)
         else:
             raw_df = fetch_remote_dataset(data_url, status_callback=status_callback)
-        currency = detect_currency(raw_df) or ""
+        detected_currency = detect_currency(raw_df) or ""
     else:
         notify("Checking for the cached demo dataset...")
         raw_path = ensure_raw_data(status_callback=status_callback)
         notify("Loading dataset...")
         raw_df = load_raw(raw_path)
-        currency = DEMO_CURRENCY
+        detected_currency = DEMO_CURRENCY
+    if currency is None:
+        currency = detected_currency
     logger.info("Currency symbol: %r", currency)
 
     notify("Matching the sheet's columns...")
@@ -211,7 +223,11 @@ def main() -> None:
 
     try:
         report_data, quality_log, out_path = run_pipeline(
-            args.as_of_date, data_url=args.data_url, data_file=args.data_file, column_map=args.column_map
+            args.as_of_date,
+            data_url=args.data_url,
+            data_file=args.data_file,
+            column_map=args.column_map,
+            currency=args.currency,
         )
 
         if report_data.current["orders"] == 0:
