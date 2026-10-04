@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from src.clean import clean_transactions
-from src.normalize import match_columns, parse_column_map, standardize
+from src.normalize import detect_currency, match_columns, parse_column_map, standardize
 
 UCI_COLUMNS = ["InvoiceNo", "StockCode", "Description", "Quantity", "InvoiceDate", "UnitPrice", "CustomerID", "Country"]
 
@@ -34,6 +34,19 @@ class TestMatchColumns:
 
     def test_unrecognized_columns_are_left_out(self):
         assert match_columns(["Ship Mode", "Discount"]) == {}
+
+
+class TestDetectCurrency:
+    def test_picks_the_most_common_symbol_in_amount_cells(self):
+        sheet = pd.DataFrame({"Price": ["$1,200.00", "$5", "(€3.00)"], "Total": ["$9.99", "-$2.50", None]})
+        assert detect_currency(sheet) == "$"
+
+    def test_ignores_symbols_inside_other_text(self):
+        sheet = pd.DataFrame({"Note": ["Paid in $ cash", "£ pending"], "Price": [1.0, 2.0]})
+        assert detect_currency(sheet) is None
+
+    def test_plain_numbers_have_no_currency(self):
+        assert detect_currency(pd.DataFrame({"Price": [1.0, 2.5]})) is None
 
 
 class TestParseColumnMap:

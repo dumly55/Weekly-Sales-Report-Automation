@@ -196,7 +196,7 @@ class TestDisplayHelpers:
         assert data.week_label == "2011-11-21 to 2011-11-27"
 
     def test_summary_rows_are_formatted(self, sales_df, cancellations_df):
-        data = build_report_data(sales_df, cancellations_df, AS_OF_DATE)
+        data = build_report_data(sales_df, cancellations_df, AS_OF_DATE, currency="£")
         assert data.summary_rows() == [
             ("Revenue", "£180.00", "£100.00", pytest.approx(80.0)),
             ("Units Sold", "18", "10", pytest.approx(80.0)),
@@ -204,8 +204,12 @@ class TestDisplayHelpers:
             ("Unique Customers", "2", "1", pytest.approx(100.0)),
         ]
 
-    def test_summary_markdown_is_a_table(self, sales_df, cancellations_df):
+    def test_amounts_have_no_symbol_when_currency_unknown(self, sales_df, cancellations_df):
         data = build_report_data(sales_df, cancellations_df, AS_OF_DATE)
+        assert data.summary_rows()[0][1:3] == ("180.00", "100.00")
+
+    def test_summary_markdown_is_a_table(self, sales_df, cancellations_df):
+        data = build_report_data(sales_df, cancellations_df, AS_OF_DATE, currency="£")
         markdown = data.summary_markdown()
         assert markdown.startswith("## Weekly Sales Report: 2011-11-21 to 2011-11-27\n")
         assert "| Revenue | £180.00 | £100.00 | +80.0% |" in markdown

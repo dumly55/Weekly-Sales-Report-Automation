@@ -1,3 +1,4 @@
+import dataclasses
 from datetime import date
 
 import pandas as pd
@@ -95,6 +96,14 @@ class TestBuildWorkbook:
             ws = wb[sheet_name]
             assert ws.freeze_panes == "A4"
             assert ws.auto_filter.ref is not None
+
+    def test_uses_the_report_currency_in_labels_and_formats(self, report_data, quality_log, tmp_path):
+        out_path = tmp_path / "report.xlsx"
+        build_workbook(dataclasses.replace(report_data, currency="$"), quality_log, out_path)
+
+        ws = load_workbook(out_path)["Summary"]
+        assert ws["A4"].value == "Revenue ($)"
+        assert ws["B4"].number_format == '"$"#,##0.00'
 
     def test_creates_output_directory_if_missing(self, report_data, quality_log, tmp_path):
         out_path = tmp_path / "nested" / "dir" / "report.xlsx"

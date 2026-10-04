@@ -17,12 +17,13 @@ from rich.table import Table
 from .clean import QualityLog, clean_transactions, load_raw
 from .download_data import StatusCallback, ensure_raw_data, fetch_remote_dataset, load_local_dataset
 from .excel_report import build_workbook
-from .normalize import parse_column_map, standardize
+from .normalize import detect_currency, parse_column_map, standardize
 from .report import WeeklyReportData, build_report_data, format_wow, latest_sales_date
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = PROJECT_ROOT / "output"
 LOGS_DIR = PROJECT_ROOT / "logs"
+DEMO_CURRENCY = "£"
 
 console = Console()
 
@@ -147,15 +148,19 @@ def run_pipeline(
     notify = status_callback or (lambda _msg: None)
     logger = logging.getLogger("main")
 
-    if data_file:
-        raw_df = load_local_dataset(Path(data_file), status_callback=status_callback)
-    elif data_url:
-        raw_df = fetch_remote_dataset(data_url, status_callback=status_callback)
+    if data_file or data_url:
+        if data_file:
+            raw_df = load_local_dataset(Path(data_file), status_callback=status_callback)
+        else:
+            raw_df = fetch_remote_dataset(data_url, status_callback=status_callback)
+        currency = detect_currency(raw_df) or ""
     else:
         notify("Checking for the cached demo dataset...")
         raw_path = ensure_raw_data(status_callback=status_callback)
         notify("Loading dataset...")
         raw_df = load_raw(raw_path)
+        currency = DEMO_CURRENCY
+    logger.info("Currency symbol: %r", currency)
 
     notify("Matching the sheet's columns...")
     raw_df, _ = standardize(raw_df, column_map)
@@ -168,7 +173,7 @@ def run_pipeline(
         logger.info("No date given; using the latest week in the data (%s)", as_of_date)
 
     notify("Computing KPIs...")
-    report_data = build_report_data(sales_df, cancellations_df, as_of_date)
+    report_data = build_report_data(sales_df, cancellations_df, as_of_date, currency)
 
     notify("Building the Excel report...")
     out_path = next_free_path(OUTPUT_DIR / f"weekly_report_{as_of_date}.xlsx")

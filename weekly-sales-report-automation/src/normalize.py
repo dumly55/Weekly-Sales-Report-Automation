@@ -3,12 +3,15 @@
 import logging
 import re
 import warnings
+from collections import Counter
 
 import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-_NUMBER_JUNK = r"[£$€¥,\s]"
+CURRENCY_SYMBOLS = "£$€¥"
+_NUMBER_JUNK = rf"[{CURRENCY_SYMBOLS},\s]"
+_AMOUNT_WITH_SYMBOL = re.compile(rf"^-?\(?\s*([{CURRENCY_SYMBOLS}])\s*-?[\d,]*\.?\d+\s*\)?$")
 
 # Field name (as users write it in a column map) -> (internal column, recognized header names).
 # Header names are compared lowercased with everything but letters and digits removed,
@@ -165,6 +168,23 @@ def to_number(series: pd.Series) -> pd.Series:
     text = series.astype(str).str.strip().str.replace(_NUMBER_JUNK, "", regex=True)
     text = text.str.replace(r"^\((.*)\)$", r"-\1", regex=True)
     return pd.to_numeric(text, errors="coerce").astype("float64")
+
+
+def detect_currency(df: pd.DataFrame, sample_rows: int = 1000) -> str | None:
+    """Returns the currency symbol used most in amount cells like "$1,200.00", or None if there are none.
+
+    Only text cells can carry a symbol: Excel files store amounts as plain numbers.
+    """
+    counts: Counter[str] = Counter()
+    for column in df.columns:
+        values = df[column].head(sample_rows)
+        if pd.api.types.is_numeric_dtype(values) or pd.api.types.is_datetime64_any_dtype(values):
+            continue
+        for value in values.dropna().astype(str):
+            match = _AMOUNT_WITH_SYMBOL.match(value.strip())
+            if match:
+                counts[match.group(1)] += 1
+    return counts.most_common(1)[0][0] if counts else None
 
 
 def to_datetime(series: pd.Series) -> pd.Series:

@@ -23,8 +23,15 @@ BAD_FONT = Font(color="C00000", bold=True)
 _GRID_SIDE = Side(style="thin", color="BFBFBF")
 GRID_BORDER = Border(left=_GRID_SIDE, right=_GRID_SIDE, top=_GRID_SIDE, bottom=_GRID_SIDE)
 
-CURRENCY_FORMAT = "£#,##0.00"
 COUNT_FORMAT = "#,##0"
+
+
+def _currency_format(symbol: str) -> str:
+    return f'"{symbol}"#,##0.00' if symbol else "#,##0.00"
+
+
+def _revenue_label(symbol: str) -> str:
+    return f"Revenue ({symbol})" if symbol else "Revenue"
 
 # Distinct tab colors so the sheets are easy to tell apart at a glance.
 TAB_COLORS = {
@@ -100,15 +107,17 @@ def _autofit_first_column(ws: Worksheet, width: int = 22) -> None:
 def _build_summary_sheet(ws: Worksheet, data: WeeklyReportData) -> None:
     _write_title(ws, f"Weekly Sales Report: {data.week_label}", span_cols=4)
     _autofit_first_column(ws)
+    currency_format = _currency_format(data.currency)
+    cancellations_value_label = f"Cancellations (value, {data.currency})" if data.currency else "Cancellations (value)"
 
     # (label, this week, last week, wow % change, format kind)
     kpi_rows = [
-        ("Revenue (GBP)", data.current["revenue"], data.previous["revenue"], data.wow["revenue"], "currency"),
+        (_revenue_label(data.currency), data.current["revenue"], data.previous["revenue"], data.wow["revenue"], "currency"),
         ("Units Sold", data.current["units"], data.previous["units"], data.wow["units"], "count"),
         ("Orders", data.current["orders"], data.previous["orders"], data.wow["orders"], "count"),
         ("Unique Customers", data.current["customers"], data.previous["customers"], data.wow["customers"], "count"),
         ("Cancellations (count)", data.current["cancellations_count"], data.previous["cancellations_count"], None, "count"),
-        ("Cancellations (value, GBP)", data.current["cancellations_value"], data.previous["cancellations_value"], None, "currency"),
+        (cancellations_value_label, data.current["cancellations_value"], data.previous["cancellations_value"], None, "currency"),
     ]
     kpi_df = pd.DataFrame([row[:4] for row in kpi_rows], columns=["Metric", "This Week", "Last Week", "WoW % Change"])
 
@@ -120,7 +129,7 @@ def _build_summary_sheet(ws: Worksheet, data: WeeklyReportData) -> None:
     # is an instance of float — reading it back would misidentify "n/a" rows as numeric.
     for offset, (_, _, _, wow_value, kind) in enumerate(kpi_rows):
         r = header_row + 1 + offset
-        value_format = CURRENCY_FORMAT if kind == "currency" else COUNT_FORMAT
+        value_format = currency_format if kind == "currency" else COUNT_FORMAT
         ws.cell(row=r, column=2).number_format = value_format
         ws.cell(row=r, column=3).number_format = value_format
 
@@ -138,11 +147,11 @@ def _build_summary_sheet(ws: Worksheet, data: WeeklyReportData) -> None:
     # Daily revenue trend data (written off to the side, feeds the chart)
     chart_start_row = last_row + 3
     ws.cell(row=chart_start_row, column=1, value="Daily Revenue Trend").font = BOLD
-    daily_last_row = _write_dataframe(ws, data.daily, chart_start_row + 1, number_formats={1: CURRENCY_FORMAT})
+    daily_last_row = _write_dataframe(ws, data.daily, chart_start_row + 1, number_formats={1: currency_format})
 
     chart = LineChart()
     chart.title = "Daily Revenue Trend"
-    chart.y_axis.title = "Revenue (GBP)"
+    chart.y_axis.title = _revenue_label(data.currency)
     chart.x_axis.title = "Date"
     values = Reference(ws, min_col=2, min_row=chart_start_row + 1, max_row=daily_last_row)
     categories = Reference(ws, min_col=1, min_row=chart_start_row + 2, max_row=daily_last_row)
@@ -157,13 +166,13 @@ def _build_top_products_sheet(ws: Worksheet, data: WeeklyReportData) -> None:
     _write_title(ws, "Top 10 Products by Revenue", span_cols=3)
     header_row = 3
     last_row = _write_dataframe(
-        ws, data.top_products, header_row, number_formats={2: CURRENCY_FORMAT, 3: COUNT_FORMAT}
+        ws, data.top_products, header_row, number_formats={2: _currency_format(data.currency), 3: COUNT_FORMAT}
     )
     _add_table_polish(ws, header_row, last_row, last_col=len(data.top_products.columns))
 
     chart = BarChart()
     chart.title = "Top Products by Revenue"
-    chart.y_axis.title = "Revenue (GBP)"
+    chart.y_axis.title = _revenue_label(data.currency)
     values = Reference(ws, min_col=3, min_row=header_row, max_row=last_row)
     categories = Reference(ws, min_col=2, min_row=header_row + 1, max_row=last_row)
     chart.add_data(values, titles_from_data=True)
@@ -177,13 +186,13 @@ def _build_by_country_sheet(ws: Worksheet, data: WeeklyReportData) -> None:
     _write_title(ws, "Revenue by Country", span_cols=3)
     header_row = 3
     last_row = _write_dataframe(
-        ws, data.by_country, header_row, number_formats={1: CURRENCY_FORMAT, 2: COUNT_FORMAT}
+        ws, data.by_country, header_row, number_formats={1: _currency_format(data.currency), 2: COUNT_FORMAT}
     )
     _add_table_polish(ws, header_row, last_row, last_col=len(data.by_country.columns))
 
     chart = BarChart()
     chart.title = "Revenue by Country"
-    chart.y_axis.title = "Revenue (GBP)"
+    chart.y_axis.title = _revenue_label(data.currency)
     values = Reference(ws, min_col=2, min_row=header_row, max_row=last_row)
     categories = Reference(ws, min_col=1, min_row=header_row + 1, max_row=last_row)
     chart.add_data(values, titles_from_data=True)
