@@ -104,6 +104,27 @@ def _autofit_first_column(ws: Worksheet, width: int = 22) -> None:
     ws.column_dimensions["A"].width = width
 
 
+FINDINGS_SPAN_COLS = 4
+FINDINGS_CHARS_PER_LINE = 70
+
+
+def _write_findings(ws: Worksheet, findings: list[str], start_row: int) -> int:
+    """Writes a "Key findings" block, one wrapped finding per row across the KPI table's width.
+    Returns the last row used (start_row - 1 if there are no findings)."""
+    if not findings:
+        return start_row - 1
+    ws.cell(row=start_row, column=1, value="Key findings").font = Font(size=12, bold=True, color="1F4E78")
+    for offset, finding in enumerate(findings, start=1):
+        row = start_row + offset
+        cell = ws.cell(row=row, column=1, value=f"• {finding}")
+        cell.alignment = Alignment(wrap_text=True, vertical="top")
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=FINDINGS_SPAN_COLS)
+        # Excel doesn't auto-fit the height of merged cells, so estimate it from the text length.
+        lines = -(-len(finding) // FINDINGS_CHARS_PER_LINE)
+        ws.row_dimensions[row].height = 15 * lines + 2
+    return start_row + len(findings)
+
+
 def _build_summary_sheet(ws: Worksheet, data: WeeklyReportData) -> None:
     _write_title(ws, f"Weekly Sales Report: {data.week_label}", span_cols=4)
     _autofit_first_column(ws)
@@ -143,6 +164,8 @@ def _build_summary_sheet(ws: Worksheet, data: WeeklyReportData) -> None:
             wow_cell.font = GOOD_FONT if wow_value >= 0 else BAD_FONT
 
     ws.freeze_panes = f"B{header_row + 1}"
+
+    last_row = _write_findings(ws, data.findings, start_row=last_row + 2)
 
     # Daily revenue trend data (written off to the side, feeds the chart)
     chart_start_row = last_row + 3

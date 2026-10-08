@@ -105,6 +105,18 @@ class TestBuildWorkbook:
         assert ws["A4"].value == "Revenue ($)"
         assert ws["B4"].number_format == '"$"#,##0.00'
 
+    def test_summary_shows_key_findings_under_the_kpi_table(self, report_data, quality_log, tmp_path):
+        report_data.findings = ["Revenue rose 80.0% week over week.", "The strongest day was Monday."]
+        out_path = tmp_path / "report.xlsx"
+        build_workbook(report_data, quality_log, out_path)
+
+        ws = load_workbook(out_path)["Summary"]
+        assert ws["A11"].value == "Key findings"
+        assert ws["A12"].value == "• Revenue rose 80.0% week over week."
+        assert ws["A13"].value == "• The strongest day was Monday."
+        assert "A12:D12" in {str(r) for r in ws.merged_cells.ranges}
+        assert ws["A16"].value == "Daily Revenue Trend"
+
     def test_organized_data_sheet_lists_clean_rows_sorted_by_date(self, report_data, quality_log, tmp_path):
         rows = pd.DataFrame(
             [
