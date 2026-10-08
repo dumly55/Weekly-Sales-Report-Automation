@@ -28,7 +28,7 @@ Because the dataset is historical, the pipeline is driven by `--as-of-date` to s
 1. **Download** the raw export (cached after first run, with a progress bar on first download).
 2. **Clean & validate**: drops exact duplicates, separates cancellations into a returns view instead of just deleting them, flags rows with missing customer IDs, and drops non-product adjustment rows — logging exactly how many rows were affected by each step.
 3. **Compute KPIs**: revenue, units sold, orders, unique customers — for the target week *and* the prior week, with week-over-week % change. Also: top 10 products by revenue, revenue by country, and cancellation totals.
-4. **Generate a formatted Excel workbook** with four sheets: `Summary` (KPI table + daily revenue trend chart), `Top Products` (table + chart), `By Country` (table + chart), and `Data Quality Log` (what got cleaned and why — an audit trail). Each sheet has a frozen header row, autofilter, zebra-striped rows, color-coded tabs, and green/red week-over-week % changes.
+4. **Generate a formatted Excel workbook** with five sheets: `Summary` (KPI table + daily revenue trend chart), `Top Products` (table + chart), `By Country` (table + chart), `Organized Data` (your cleaned rows with clear column names, sorted by date; for data over 100,000 rows, just the two weeks compared), and `Data Quality Log` (what got cleaned and why — an audit trail). Each sheet has a frozen header row, autofilter, zebra-striped rows, color-coded tabs, and green/red week-over-week % changes.
 5. **Print a colorized summary** to the console and **log the full run detail** to `logs/run_<date>.log`.
 
 ## Setup
@@ -110,7 +110,7 @@ If a date has no matching transactions, or if the download/input data fails, the
 pytest
 ```
 
-74 tests covering the cleaning rules and messy-value parsing (`test_clean.py`), column recognition for differently shaped sheets (`test_normalize.py`), KPI/week-boundary math and summary formatting (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
+76 tests covering the cleaning rules and messy-value parsing (`test_clean.py`), column recognition for differently shaped sheets (`test_normalize.py`), KPI/week-boundary math and summary formatting (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
 
 ## Scheduled weekly run
 

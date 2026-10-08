@@ -190,7 +190,7 @@ def run_pipeline(
 
     notify("Building the Excel report...")
     out_path = next_free_path(OUTPUT_DIR / f"weekly_report_{as_of_date}.xlsx")
-    build_workbook(report_data, quality_log, out_path)
+    build_workbook(report_data, quality_log, out_path, organized_rows=sales_df)
     logger.info("Report written to %s", out_path)
 
     notify("Done.")

@@ -223,7 +223,57 @@ def _build_quality_log_sheet(ws: Worksheet, quality_log: QualityLog) -> None:
     _add_table_polish(ws, header_row, last_row, last_col=len(df.columns))
 
 
-def build_workbook(data: WeeklyReportData, quality_log: QualityLog, out_path: Path) -> None:
+ORGANIZED_COLUMNS = {
+    "InvoiceDate": ("Date", 18),
+    "InvoiceNo": ("Order ID", 14),
+    "StockCode": ("Product Code", 16),
+    "Description": ("Product", 40),
+    "Quantity": ("Quantity", 10),
+    "UnitPrice": ("Unit Price", 12),
+    "LineTotal": ("Line Total", 13),
+    "CustomerID": ("Customer", 14),
+    "Country": ("Country", 18),
+}
+# Above this many rows, only the two compared weeks are written, to keep the file a sensible size.
+ORGANIZED_ROW_LIMIT = 100_000
+
+
+def _build_organized_sheet(ws: Worksheet, sales_df: pd.DataFrame, data: WeeklyReportData) -> None:
+    if len(sales_df) > ORGANIZED_ROW_LIMIT:
+        in_compared_weeks = (sales_df["InvoiceDate"] >= data.week_start - pd.Timedelta(days=7)) & (
+            sales_df["InvoiceDate"] < data.week_end
+        )
+        rows = sales_df[in_compared_weeks]
+        title = f"Organized Data: the two weeks compared ({len(rows):,} of {len(sales_df):,} clean rows)"
+    else:
+        rows = sales_df
+        title = f"Organized Data: all {len(rows):,} clean sales rows"
+
+    rows = rows.sort_values(["InvoiceDate", "InvoiceNo"])[list(ORGANIZED_COLUMNS)]
+    rows = rows.astype(object).where(rows.notna(), None)
+
+    _write_title(ws, title, span_cols=len(ORGANIZED_COLUMNS))
+    header_row = 3
+    _write_header_row(ws, [label for label, _ in ORGANIZED_COLUMNS.values()], header_row)
+    for values in rows.itertuples(index=False):
+        ws.append(list(values))
+
+    last_row = header_row + len(rows)
+    formats = {1: "yyyy-mm-dd hh:mm", 6: _currency_format(data.currency), 7: _currency_format(data.currency), 8: "0"}
+    for col, number_format in formats.items():
+        for (cell,) in ws.iter_rows(min_row=header_row + 1, max_row=last_row, min_col=col, max_col=col):
+            cell.number_format = number_format
+    for col, (_, width) in enumerate(ORGANIZED_COLUMNS.values(), start=1):
+        ws.column_dimensions[get_column_letter(col)].width = width
+
+    _add_table_polish(ws, header_row, max(last_row, header_row), last_col=len(ORGANIZED_COLUMNS))
+    ws.sheet_properties.tabColor = "EF6C00"
+
+
+def build_workbook(
+    data: WeeklyReportData, quality_log: QualityLog, out_path: Path, organized_rows: pd.DataFrame | None = None
+) -> None:
+    """`organized_rows` (the cleaned sales rows), if given, adds an "Organized Data" sheet."""
     wb = Workbook()
 
     summary_ws = wb.active
@@ -232,6 +282,8 @@ def build_workbook(data: WeeklyReportData, quality_log: QualityLog, out_path: Pa
 
     _build_top_products_sheet(wb.create_sheet("Top Products"), data)
     _build_by_country_sheet(wb.create_sheet("By Country"), data)
+    if organized_rows is not None:
+        _build_organized_sheet(wb.create_sheet("Organized Data"), organized_rows, data)
     _build_quality_log_sheet(wb.create_sheet("Data Quality Log"), quality_log)
 
     for sheet_name, color in TAB_COLORS.items():

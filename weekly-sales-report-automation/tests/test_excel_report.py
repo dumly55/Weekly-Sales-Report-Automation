@@ -105,6 +105,42 @@ class TestBuildWorkbook:
         assert ws["A4"].value == "Revenue ($)"
         assert ws["B4"].number_format == '"$"#,##0.00'
 
+    def test_organized_data_sheet_lists_clean_rows_sorted_by_date(self, report_data, quality_log, tmp_path):
+        rows = pd.DataFrame(
+            [
+                _sales_row("600002", "B1", "Gadget", 5, "2011-11-23 11:00:00", 10.0, None, "France"),
+                _sales_row("600001", "A1", "Widget", 10, "2011-11-21 10:00:00", 10.0, 1001, "United Kingdom"),
+            ]
+        )
+        out_path = tmp_path / "report.xlsx"
+        build_workbook(report_data, quality_log, out_path, organized_rows=rows)
+
+        wb = load_workbook(out_path)
+        assert wb.sheetnames == ["Summary", "Top Products", "By Country", "Organized Data", "Data Quality Log"]
+        ws = wb["Organized Data"]
+        assert [c.value for c in ws[3]] == [
+            "Date", "Order ID", "Product Code", "Product", "Quantity", "Unit Price", "Line Total", "Customer", "Country"
+        ]
+        assert ws["B4"].value == "600001" and ws["B5"].value == "600002"
+        assert ws["H5"].value is None
+        assert ws.freeze_panes == "A4"
+
+    def test_organized_data_keeps_only_compared_weeks_for_large_data(self, report_data, quality_log, tmp_path, monkeypatch):
+        monkeypatch.setattr("src.excel_report.ORGANIZED_ROW_LIMIT", 1)
+        rows = pd.DataFrame(
+            [
+                _sales_row("600001", "A1", "Widget", 10, "2011-11-21 10:00:00", 10.0, 1001, "UK"),
+                _sales_row("500001", "A1", "Widget", 10, "2011-11-14 10:00:00", 10.0, 2001, "UK"),
+                _sales_row("100001", "A1", "Widget", 10, "2011-01-03 10:00:00", 10.0, 3001, "UK"),
+            ]
+        )
+        out_path = tmp_path / "report.xlsx"
+        build_workbook(report_data, quality_log, out_path, organized_rows=rows)
+
+        ws = load_workbook(out_path)["Organized Data"]
+        assert [ws["B4"].value, ws["B5"].value, ws["B6"].value] == ["500001", "600001", None]
+        assert "2 of 3" in ws["A1"].value
+
     def test_creates_output_directory_if_missing(self, report_data, quality_log, tmp_path):
         out_path = tmp_path / "nested" / "dir" / "report.xlsx"
         build_workbook(report_data, quality_log, out_path)
