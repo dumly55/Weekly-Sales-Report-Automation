@@ -1,6 +1,6 @@
 """KPI computation for the weekly sales report."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 import pandas as pd
@@ -85,6 +85,7 @@ class WeeklyReportData:
     by_country: pd.DataFrame
     daily: pd.DataFrame
     currency: str = ""
+    findings: list[str] = field(default_factory=list)
 
     @property
     def week_label(self) -> str:
@@ -109,6 +110,8 @@ class WeeklyReportData:
         ]
         for metric, this_week, last_week, wow in self.summary_rows():
             lines.append(f"| {metric} | {this_week} | {last_week} | {format_wow(wow)} |")
+        if self.findings:
+            lines += ["", "### Key findings", ""] + [f"- {finding}" for finding in self.findings]
         return "\n".join(lines) + "\n"
 
 

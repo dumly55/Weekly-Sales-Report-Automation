@@ -12,11 +12,13 @@ from pathlib import Path
 
 import requests
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from .clean import QualityLog, clean_transactions, load_raw
 from .download_data import StatusCallback, ensure_raw_data, fetch_remote_dataset, load_local_dataset
 from .excel_report import build_workbook
+from .findings import build_findings
 from .normalize import detect_currency, parse_column_map, standardize
 from .report import WeeklyReportData, build_report_data, format_wow, latest_sales_date
 
@@ -187,6 +189,7 @@ def run_pipeline(
 
     notify("Computing KPIs...")
     report_data = build_report_data(sales_df, cancellations_df, as_of_date, currency)
+    report_data.findings = build_findings(sales_df, report_data)
 
     notify("Building the Excel report...")
     out_path = next_free_path(OUTPUT_DIR / f"weekly_report_{as_of_date}.xlsx")
@@ -213,6 +216,11 @@ def _print_summary(report_data: WeeklyReportData, out_path: Path) -> None:
 
     console.print()
     console.print(table)
+    if report_data.findings:
+        console.print("\n[bold cyan]Key findings[/bold cyan]")
+        for finding in report_data.findings:
+            console.print(f"  • {escape(finding)}")
+        console.print()
     console.print(f"[bold green]Report written[/bold green] to [bold]{out_path}[/bold]\n")
 
 

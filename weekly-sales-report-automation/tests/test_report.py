@@ -214,6 +214,12 @@ class TestDisplayHelpers:
         assert markdown.startswith("## Weekly Sales Report: 2011-11-21 to 2011-11-27\n")
         assert "| Revenue | £180.00 | £100.00 | +80.0% |" in markdown
         assert "| Unique Customers | 2 | 1 | +100.0% |" in markdown
+        assert "Key findings" not in markdown
+
+    def test_summary_markdown_lists_findings(self, sales_df, cancellations_df):
+        data = build_report_data(sales_df, cancellations_df, AS_OF_DATE)
+        data.findings = ["Revenue rose 80.0% week over week."]
+        assert data.summary_markdown().endswith("### Key findings\n\n- Revenue rose 80.0% week over week.\n")
 
     def test_format_wow(self):
         assert format_wow(2.567) == "+2.6%"
