@@ -75,7 +75,7 @@ python -m src.main --data-url "<link>" --column-map "date=Placed On, line_total=
 
 For the scheduled GitHub run, put the same text in a `COLUMN_MAP` repository variable (next to `DATA_URL`). Fields you leave out are still matched automatically.
 
-**Currency:** amounts are shown with the symbol found in your data (e.g. `$` from `"$1,200.00"`), or with no symbol if there isn't one. Excel files usually store amounts as plain numbers, so set it yourself with `--currency "$"`, or a `CURRENCY` repository variable for the scheduled run. The demo dataset is in £.
+**Currency:** your data is shown in US dollars (`$`), unless its amounts clearly use another symbol, like `€1,200.00`. To force a symbol, use `--currency "€"`, or a `CURRENCY` repository variable for the scheduled run. The demo dataset stays in £, since its amounts really are British pounds.
 
 ## Run (command line)
 

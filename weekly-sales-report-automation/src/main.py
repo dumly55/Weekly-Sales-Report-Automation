@@ -24,6 +24,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = PROJECT_ROOT / "output"
 LOGS_DIR = PROJECT_ROOT / "logs"
 DEMO_CURRENCY = "£"
+DEFAULT_CURRENCY = "$"
 
 console = Console()
 
@@ -76,8 +77,8 @@ def parse_args() -> argparse.Namespace:
         "--currency",
         default=None,
         help=(
-            'Optional: currency symbol to show on amounts, e.g. "$" or "€". By default it\'s detected from '
-            "amounts like \"$1,200.00\" in your data (Excel files usually store plain numbers, so set it there)."
+            'Optional: currency symbol to show on amounts, e.g. "€". Defaults to the symbol used in your '
+            'data\'s amounts (like "€1,200.00"), or "$" if there isn\'t one. The demo dataset is in £.'
         ),
     )
     parser.add_argument(
@@ -163,7 +164,7 @@ def run_pipeline(
             raw_df = load_local_dataset(Path(data_file), status_callback=status_callback)
         else:
             raw_df = fetch_remote_dataset(data_url, status_callback=status_callback)
-        detected_currency = detect_currency(raw_df) or ""
+        detected_currency = detect_currency(raw_df) or DEFAULT_CURRENCY
     else:
         notify("Checking for the cached demo dataset...")
         raw_path = ensure_raw_data(status_callback=status_callback)
