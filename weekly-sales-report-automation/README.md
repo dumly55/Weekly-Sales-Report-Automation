@@ -44,7 +44,7 @@ pip install -r requirements.txt
 
 ## Don't want to use the terminal?
 
-Double-click **`run_gui.bat`**. It opens a small window where you can optionally paste a data link and pick a week from a calendar (or keep the default, the latest week in the data), then click **Generate Report** — no commands to type. It reuses the exact same pipeline as the CLI below, just with a point-and-click front end (`src/gui.py`, launched via `run_gui.pyw`).
+Double-click **`run_gui.bat`**. It opens a small window where you can optionally paste a data link and pick a week from a calendar (or keep the default, the latest week in the data), then click **Generate Report** — no commands to type. The window then shows the KPI table and the key findings, with buttons to open the Excel report or its folder. It reuses the exact same pipeline as the CLI below, just with a point-and-click front end (`src/gui.py`, launched via `run_gui.pyw`).
 
 The data-source field accepts:
 - A direct link to a CSV or Excel file

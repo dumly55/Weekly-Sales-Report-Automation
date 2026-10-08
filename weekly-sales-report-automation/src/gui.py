@@ -26,8 +26,8 @@ class ReportApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title(WINDOW_TITLE)
-        self.root.geometry("600x560")
-        self.root.minsize(560, 520)
+        self.root.geometry("640x780")
+        self.root.minsize(580, 640)
 
         style = ttk.Style()
         for theme in ("vista", "clam"):
@@ -197,6 +197,21 @@ class ReportApp:
         button_row.pack(fill="x")
         ttk.Button(button_row, text="Open Report", command=lambda: os.startfile(out_path)).pack(side="left")
         ttk.Button(button_row, text="Open Folder", command=lambda: os.startfile(out_path.parent)).pack(side="left", padx=8)
+
+        if report_data.findings:
+            ttk.Label(self.results_frame, text="Key findings", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(12, 4))
+            findings_frame = ttk.Frame(self.results_frame)
+            findings_frame.pack(fill="both", expand=True)
+            scrollbar = ttk.Scrollbar(findings_frame, orient="vertical")
+            text = tk.Text(
+                findings_frame, wrap="word", height=8, relief="flat", font=("Segoe UI", 10),
+                padx=8, pady=6, yscrollcommand=scrollbar.set,
+            )
+            scrollbar.config(command=text.yview)
+            scrollbar.pack(side="right", fill="y")
+            text.pack(side="left", fill="both", expand=True)
+            text.insert("1.0", "\n\n".join(f"•  {finding}" for finding in report_data.findings))
+            text.config(state="disabled")
 
 
 def main() -> None:
