@@ -191,19 +191,12 @@ def _data_notes(result: Comparison) -> list[str]:
         )
     unmatched_actuals, unmatched_predictions = len(result.unmatched_actuals), len(result.unmatched_predictions)
     if unmatched_actuals:
-        names = ", ".join(result.unmatched_actuals[:5])
-        if unmatched_actuals > 5:
-            names += f" and {unmatched_actuals - 5} more"
-        if unmatched_actuals == 1:
-            findings.append(
-                f"1 movie in the results sheet has no matching prediction "
-                f"(it may be listed under a different title): {names}."
-            )
-        else:
-            findings.append(
-                f"{unmatched_actuals} movies in the results sheet have no matching prediction "
-                f"(they may be listed under a different title): {names}."
-            )
+        one = unmatched_actuals == 1
+        findings.append(
+            f"{unmatched_actuals} {'movie' if one else 'movies'} in the results sheet {'has' if one else 'have'} "
+            f"no matching prediction ({'it' if one else 'they'} may be listed under a different title): "
+            f"{_names(result.unmatched_actuals)}."
+        )
     if unmatched_predictions:
         findings.append(
             f"{unmatched_predictions} predicted {'movie doesn' if unmatched_predictions == 1 else 'movies don'}'t "

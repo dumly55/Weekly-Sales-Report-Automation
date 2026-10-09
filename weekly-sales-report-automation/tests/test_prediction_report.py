@@ -194,6 +194,18 @@ def test_no_matching_titles_still_builds_the_report(tmp_path):
     assert result.unmatched_predictions == ["Alpha"] and result.unmatched_actuals == ["Zulu"]
 
 
+def test_many_unmatched_results_are_listed_with_a_count():
+    titles = ["Kilo", "Lima", "Mike", "Oscar", "Papa", "Quebec", "Romeo"]
+    actuals = pd.DataFrame(
+        {"title": titles, "actual": [1.0] * 7, "projection": [None] * 7, "release_date": [pd.NaT] * 7, "status_text": [COMPLETE] * 7}
+    )
+    result = compare(pd.DataFrame({"title": ["Alpha"], "predicted": [1.0]}), actuals)
+    assert (
+        "7 movies in the results sheet have no matching prediction (they may be listed under a different title): "
+        "Kilo, Lima, Mike, Oscar, Papa and 2 more."
+    ) in prediction_findings(result)
+
+
 def test_run_end_to_end_with_local_files(tmp_path, monkeypatch):
     monkeypatch.setattr("src.prediction_report.OUTPUT_DIR", tmp_path)
     (tmp_path / "predictions.csv").write_text(
