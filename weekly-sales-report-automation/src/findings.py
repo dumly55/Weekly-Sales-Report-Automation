@@ -3,7 +3,7 @@ always produces the same text. Each rule returns a sentence only when it has som
 
 import pandas as pd
 
-from .report import WeeklyReportData
+from .report import WeeklyReportData, filter_range
 
 FLAT_PCT = 0.5  # revenue changes smaller than this (in %) are described as flat
 BENCHMARK_WEEKS = 4
@@ -14,10 +14,6 @@ HIGH_CANCELLATION_SHARE = 0.10  # cancellations worth at least this share of rev
 
 def _money(value: float, currency: str) -> str:
     return f"{'-' if value < 0 else ''}{currency}{abs(value):,.2f}"
-
-
-def _in_range(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
-    return df[(df["InvoiceDate"] >= start) & (df["InvoiceDate"] < end)]
 
 
 def _headline(data: WeeklyReportData) -> str:
@@ -52,7 +48,7 @@ def _benchmark(sales_df: pd.DataFrame, data: WeeklyReportData) -> str | None:
     weekly = []
     for weeks_back in range(1, BENCHMARK_WEEKS + 1):
         start = data.week_start - pd.Timedelta(days=7 * weeks_back)
-        week = _in_range(sales_df, start, start + pd.Timedelta(days=7))
+        week = filter_range(sales_df, start, start + pd.Timedelta(days=7))
         if not week.empty:
             weekly.append(week["LineTotal"].sum())
     if len(weekly) < 2:
@@ -148,10 +144,10 @@ def _cancellations(data: WeeklyReportData) -> str | None:
 
 
 def build_findings(sales_df: pd.DataFrame, data: WeeklyReportData) -> list[str]:
-    this_week = _in_range(sales_df, data.week_start, data.week_end)
+    this_week = filter_range(sales_df, data.week_start, data.week_end)
     if this_week.empty:
         return [f"There were no sales in the week of {data.week_label}."]
-    last_week = _in_range(sales_df, data.week_start - pd.Timedelta(days=7), data.week_start)
+    last_week = filter_range(sales_df, data.week_start - pd.Timedelta(days=7), data.week_start)
 
     candidates = [
         _headline(data),

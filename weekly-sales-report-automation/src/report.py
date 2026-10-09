@@ -23,7 +23,7 @@ def latest_sales_date(sales_df: pd.DataFrame) -> date:
     return sales_df["InvoiceDate"].max().date()
 
 
-def _filter_range(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
+def filter_range(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
     return df[(df["InvoiceDate"] >= start) & (df["InvoiceDate"] < end)]
 
 
@@ -127,10 +127,10 @@ def build_report_data(
     start, end = week_bounds(as_of_date)
     prev_start, prev_end = start - pd.Timedelta(days=7), start
 
-    sales_week = _filter_range(sales_df, start, end)
-    cancels_week = _filter_range(cancellations_df, start, end)
-    sales_prev = _filter_range(sales_df, prev_start, prev_end)
-    cancels_prev = _filter_range(cancellations_df, prev_start, prev_end)
+    sales_week = filter_range(sales_df, start, end)
+    cancels_week = filter_range(cancellations_df, start, end)
+    sales_prev = filter_range(sales_df, prev_start, prev_end)
+    cancels_prev = filter_range(cancellations_df, prev_start, prev_end)
 
     # A sheet without a customer column has no IDs at all, so customers can't be counted (not zero).
     count_customers = bool(sales_df["CustomerID"].notna().any())
