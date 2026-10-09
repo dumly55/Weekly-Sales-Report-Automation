@@ -4,7 +4,14 @@ import pandas as pd
 import pytest
 from openpyxl import load_workbook
 
-from src.prediction_report import build_prediction_workbook, prediction_findings, short_money, summary_markdown
+from src.prediction_report import (
+    build_prediction_workbook,
+    prediction_findings,
+    run,
+    short_money,
+    summary_markdown,
+    tableau_rows,
+)
 from src.predictions import compare
 
 AS_OF = date(2026, 10, 8)
@@ -82,6 +89,30 @@ class TestWorkbook:
         out_path = tmp_path / "accuracy.xlsx"
         build_prediction_workbook(result, prediction_findings(result), out_path, AS_OF)
         assert load_workbook(out_path)["Scorecard"]["A3"].value == "No released movies to score yet."
+
+
+def test_tableau_rows_are_one_per_movie_per_forecaster():
+    rows = tableau_rows(_result())
+    assert len(rows) == 8
+    alpha = rows[(rows["movie"] == "Alpha") & (rows["forecaster"] == "Predictions")].iloc[0]
+    assert (alpha["release_date"], alpha["forecast"], alpha["actual"]) == ("2026-01-02", 110.0, 100.0)
+    assert (alpha["status"], alpha["error"], alpha["pct_error"], alpha["direction"]) == ("Released", 10.0, 10.0, "Too high")
+    delta = rows[(rows["movie"] == "Delta") & (rows["forecaster"] == "Tracker Projection")].iloc[0]
+    assert delta["status"] == "Upcoming"
+    assert pd.isna(delta["pct_error"]) and delta["direction"] == ""
+
+
+def test_run_end_to_end_with_local_files(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.prediction_report.OUTPUT_DIR", tmp_path)
+    (tmp_path / "predictions.csv").write_text("MOVIE TITLE,WORLDWIDE TOTAL\nMERCY,\"$41,470,588.24\"\n", encoding="utf-8")
+    (tmp_path / "actuals.csv").write_text(
+        "Report,,\nMovie,Release Date,Worldwide Actual\nMercy 👮🏻,23/01/2026,\"$54,709,856\"\n", encoding="utf-8"
+    )
+    result, findings, out_path = run(str(tmp_path / "predictions.csv"), str(tmp_path / "actuals.csv"), AS_OF)
+
+    assert out_path == tmp_path / "prediction_accuracy_2026-10-08.xlsx" and out_path.exists()
+    assert len(pd.read_csv(out_path.with_suffix(".csv"))) == 1
+    assert findings[0] == "1 of the 1 matched movies have been released and scored so far."
 
 
 def test_summary_markdown():

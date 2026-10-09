@@ -127,13 +127,15 @@ The output is `output/prediction_accuracy_<date>.xlsx`, with four sheets:
 - **Upcoming:** matched movies still waiting on an actual result.
 - **Unmatched:** titles found in only one sheet, so nothing is silently dropped.
 
+A **Tableau-ready CSV** is written next to it (`prediction_accuracy_<date>.csv`). It's in long, tidy format, one row per movie per forecaster, with the forecast, actual, error, % error, direction (too high/too low) and status (released/upcoming), ready to connect to Tableau without reshaping.
+
 ## Tests
 
 ```bash
 pytest
 ```
 
-124 tests covering the prediction scoring and its report (`test_predictions.py`, `test_prediction_report.py`), the findings rules (`test_findings.py`), the cleaning rules and messy-value parsing (`test_clean.py`), column recognition for differently shaped sheets (`test_normalize.py`), KPI/week-boundary math and summary formatting (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
+126 tests covering the prediction scoring and its report (`test_predictions.py`, `test_prediction_report.py`), the findings rules (`test_findings.py`), the cleaning rules and messy-value parsing (`test_clean.py`), column recognition for differently shaped sheets (`test_normalize.py`), KPI/week-boundary math and summary formatting (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
 
 ## Scheduled weekly run
 

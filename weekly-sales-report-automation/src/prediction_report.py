@@ -268,6 +268,31 @@ def build_prediction_workbook(result: Comparison, findings: list[str], out_path:
     wb.save(out_path)
 
 
+def tableau_rows(result: Comparison) -> pd.DataFrame:
+    """Long, tidy table for Tableau: one row per movie per forecaster that made a forecast."""
+    frames = []
+    for forecast, label in FORECASTS.items():
+        movies = result.movies[result.movies[forecast].notna()]
+        pct = movies[f"{forecast}_pct_error"]
+        frames.append(
+            pd.DataFrame(
+                {
+                    "movie": movies["title"],
+                    "release_date": movies["release_date"].dt.strftime("%Y-%m-%d"),
+                    "forecaster": label,
+                    "forecast": movies[forecast],
+                    "actual": movies["actual"].where(movies["released"]),
+                    "status": movies["released"].map({True: "Released", False: "Upcoming"}),
+                    "error": (movies[forecast] - movies["actual"]).where(movies["released"]),
+                    "pct_error": pct.round(2),
+                    "abs_pct_error": pct.abs().round(2),
+                    "direction": pct.map(lambda v: "" if pd.isna(v) else "Too high" if v > 0 else "Too low" if v < 0 else "Exact"),
+                }
+            )
+        )
+    return pd.concat(frames, ignore_index=True)
+
+
 def summary_markdown(result: Comparison, findings: list[str], as_of: date) -> str:
     rows, headers = _scorecard_rows(result)
     lines = [f"## Prediction Accuracy as of {as_of}", ""]
@@ -298,7 +323,8 @@ def run(
     findings = prediction_findings(result)
     out_path = next_free_path(OUTPUT_DIR / f"prediction_accuracy_{as_of}.xlsx")
     build_prediction_workbook(result, findings, out_path, as_of)
-    logging.getLogger(__name__).info("Prediction report written to %s", out_path)
+    tableau_rows(result).to_csv(out_path.with_suffix(".csv"), index=False)
+    logging.getLogger(__name__).info("Prediction report written to %s (+ .csv for Tableau)", out_path)
     return result, findings, out_path
 
 
@@ -316,7 +342,8 @@ def _print_summary(result: Comparison, findings: list[str], out_path: Path, as_o
     console.print("\n[bold cyan]Key findings[/bold cyan]")
     for finding in findings:
         console.print(f"  • {escape(finding)}")
-    console.print(f"\n[bold green]Report written[/bold green] to [bold]{out_path}[/bold]\n")
+    console.print(f"\n[bold green]Report written[/bold green] to [bold]{out_path}[/bold]")
+    console.print(f"[bold green]Tableau-ready data[/bold green] in [bold]{out_path.with_suffix('.csv')}[/bold]\n")
 
 
 def _parse_title_map(value: str) -> list[tuple[str, str]]:
