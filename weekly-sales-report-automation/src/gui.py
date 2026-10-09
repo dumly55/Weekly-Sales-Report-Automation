@@ -6,6 +6,7 @@ Tkinter isn't installed on every CI runner, and nothing here needs testing that
 the existing pipeline tests don't already cover.
 """
 
+import logging
 import os
 import queue
 import threading
@@ -81,6 +82,7 @@ class ReportTab:
         try:
             self._work_queue.put(("success", work(lambda msg: self._work_queue.put(("status", msg)))))
         except Exception as exc:
+            logging.getLogger(__name__).exception("%s failed", self.tab_title)
             self._work_queue.put(("error", describe_error(exc)))
 
     def _poll_queue(self) -> None:
