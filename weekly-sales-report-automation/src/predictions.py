@@ -31,9 +31,39 @@ ACTUAL_FIELDS = {
     "actual": ("Actual", ["worldwideactual", "actualworldwide", "actual", "actualgross", "worldwidegross"]),
     "projection": ("Projection", ["worldwideproj", "worldwideprojection", "projection", "projected", "prediction", "forecast"]),
     "release_date": ("Release Date", ["releasedate", "release", "date", "opening", "opendate"]),
+    "status": (
+        "Status",
+        ["countdown", "status", "runstatus", "releasestatus", "boxofficestatus", "theatricalstatus", "stage"],
+    ),
 }
 
 FUZZY_MATCH_CUTOFF = 0.85
+
+# A movie's run status. Only finished runs are scored: a movie still in theaters has only its
+# gross so far, which would make any full-run prediction look too high.
+FINAL = "Final"  # run complete, with a result: scored
+IN_THEATERS = "In theaters"  # still earning; its actual is the gross so far
+UPCOMING = "Upcoming"  # not released yet
+AWAITING_RESULT = "Awaiting result"  # run complete, but the results sheet has no number for it
+
+_COMPLETE_WORDS = ("complete", "final", "closed", "ended", "finished")
+_IN_THEATERS_WORDS = ("theater", "theatre", "in release", "now playing", "now showing", "release day", "opening day")
+
+
+def classify_run(status_text: object, has_result: bool) -> tuple[str, int | None]:
+    """Returns (run status, days) from a status cell like "✅ Run Complete", "🎬 In Theaters for
+    21 days", "RELEASE DAY" or "70 Days". `days` is days in theaters for a movie in theaters, or
+    days until release for an upcoming one. Without a recognizable status, a result counts as final."""
+    text = "" if pd.isna(status_text) else str(status_text).lower()
+    number = re.search(r"(\d+)\s*day", text)
+    days = int(number.group(1)) if number else None
+    if any(word in text for word in _COMPLETE_WORDS):
+        return (FINAL if has_result else AWAITING_RESULT), None
+    if any(word in text for word in _IN_THEATERS_WORDS):
+        return IN_THEATERS, days if days is not None else 0
+    if days is not None or "upcoming" in text or "coming soon" in text:
+        return UPCOMING, days
+    return (FINAL if has_result else UPCOMING), None
 
 
 def load_source(source: str) -> pd.DataFrame:
@@ -140,6 +170,7 @@ def read_actuals(raw: pd.DataFrame) -> pd.DataFrame:
     out = pd.DataFrame({"title": df[mapping["title"]].map(clean_title), "actual": to_number(df[mapping["actual"]])})
     out["projection"] = to_number(df[mapping["projection"]]) if "projection" in mapping else float("nan")
     out["release_date"] = to_datetime(df[mapping["release_date"]]) if "release_date" in mapping else pd.NaT
+    out["status_text"] = df[mapping["status"]].astype(object) if "status" in mapping else None
     return out
 
 
@@ -186,12 +217,18 @@ def compare(
                 "predicted": predictions.iloc[p]["predicted"],
                 "projection": actual_row["projection"],
                 "actual": actual_row["actual"],
+                "status_text": actual_row.get("status_text"),
             }
         )
-    movies = pd.DataFrame(rows, columns=["title", "release_date", "predicted", "projection", "actual"])
-    movies["released"] = movies["actual"].notna() & (movies["actual"] > 0)
+    columns = ["title", "release_date", "predicted", "projection", "actual", "status_text"]
+    movies = pd.DataFrame(rows, columns=columns)
+    has_result = movies["actual"].notna() & (movies["actual"] > 0)
+    statuses = [classify_run(text, result) for text, result in zip(movies["status_text"], has_result)]
+    movies["run_status"] = [status for status, _ in statuses]
+    movies["run_days"] = pd.array([days for _, days in statuses], dtype="Int64")
+    movies["scored"] = movies["run_status"] == FINAL
     for forecast in ("predicted", "projection"):
-        scored = movies["released"] & movies[forecast].notna()
+        scored = movies["scored"] & movies[forecast].notna()
         movies[f"{forecast}_pct_error"] = ((movies[forecast] - movies["actual"]) / movies["actual"] * 100).where(scored)
     movies = movies.sort_values(["release_date", "title"], na_position="last").reset_index(drop=True)
 
@@ -205,7 +242,7 @@ def compare(
 
 
 def accuracy_stats(movies: pd.DataFrame, forecast: str) -> dict | None:
-    """Accuracy of one forecast column ("predicted" or "projection") over the released movies it covers.
+    """Accuracy of one forecast column ("predicted" or "projection") over the finished movies it covers.
     Errors are relative to the actual result: positive means the forecast was too high."""
     pct = movies[f"{forecast}_pct_error"].dropna()
     if pct.empty:

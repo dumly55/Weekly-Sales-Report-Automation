@@ -34,13 +34,29 @@ CREATE TABLE IF NOT EXISTS movie_scores (
     release_date  TEXT,             -- YYYY-MM-DD, if the results sheet has one
     forecaster    TEXT NOT NULL,    -- 'Predictions' or 'Tracker Projection'
     forecast      REAL NOT NULL,    -- forecast worldwide gross
-    actual        REAL,             -- actual worldwide gross; NULL until released
-    status        TEXT NOT NULL,    -- 'Released' or 'Upcoming'
-    pct_error     REAL,             -- (forecast - actual) / actual * 100; NULL until released
-    accuracy_band TEXT,             -- 'Nailed it', 'Close', 'Off' or 'Way off'; NULL until released
+    actual        REAL,             -- final worldwide gross; NULL until the run is complete
+    status        TEXT NOT NULL,    -- 'Final', 'In theaters', 'Upcoming' or 'Awaiting result'
+    pct_error     REAL,             -- (forecast - actual) / actual * 100; NULL unless Final
+    accuracy_band TEXT,             -- 'Nailed it', 'Close', 'Off' or 'Way off'; NULL unless Final
+    gross_so_far  REAL,             -- in theaters only: worldwide gross so far
+    days_in_theaters   INTEGER,     -- in theaters only
+    days_until_release INTEGER,     -- upcoming only
     PRIMARY KEY (run_date, movie, forecaster)
 );
 """
+
+# Columns added to movie_scores after it was first created, for upgrading older history files.
+_ADDED_COLUMNS = {"gross_so_far": "REAL", "days_in_theaters": "INTEGER", "days_until_release": "INTEGER"}
+
+
+def _upgrade(conn: sqlite3.Connection) -> None:
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(movie_scores)")}
+    for column, sql_type in _ADDED_COLUMNS.items():
+        if column not in existing:
+            conn.execute(f"ALTER TABLE movie_scores ADD COLUMN {column} {sql_type}")
+    # Older runs labelled every movie with a result 'Released'.
+    conn.execute("UPDATE movie_scores SET status = 'Final' WHERE status = 'Released'")
+    conn.commit()
 
 
 def open_history(path: Path = HISTORY_DB) -> sqlite3.Connection:
@@ -53,6 +69,7 @@ def open_history(path: Path = HISTORY_DB) -> sqlite3.Connection:
         finally:
             disk.close()
     conn.executescript(SCHEMA)
+    _upgrade(conn)
     return conn
 
 
@@ -107,17 +124,26 @@ def save_scores(scores: pd.DataFrame, conn: sqlite3.Connection, run_date: date) 
     def value(v):
         return None if pd.isna(v) or v == "" else v
 
+    def optional(row, column: str):
+        value_ = getattr(row, column, None)
+        return None if value_ is None else value(value_)
+
+    def whole(v):
+        return None if v is None else int(v)
+
     rows = [
         (day, r.movie, value(r.release_date), r.forecaster, float(r.forecast), value(r.actual), r.status,
-         value(r.pct_error), value(r.accuracy_band))
+         value(r.pct_error), value(r.accuracy_band), optional(r, "gross_so_far"),
+         whole(optional(r, "days_in_theaters")), whole(optional(r, "days_until_release")))
         for r in scores.itertuples(index=False)
     ]
     conn.execute("DELETE FROM movie_scores WHERE run_date = ?", (day,))
     conn.executemany(
         """
         INSERT OR REPLACE INTO movie_scores
-            (run_date, movie, release_date, forecaster, forecast, actual, status, pct_error, accuracy_band)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (run_date, movie, release_date, forecaster, forecast, actual, status, pct_error, accuracy_band,
+             gross_so_far, days_in_theaters, days_until_release)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         rows,
     )

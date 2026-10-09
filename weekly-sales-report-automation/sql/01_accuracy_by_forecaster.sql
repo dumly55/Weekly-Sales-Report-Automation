@@ -1,4 +1,4 @@
--- Question: How accurate is each forecaster, counting only released movies in the latest run?
+-- Question: How accurate is each forecaster, counting only finished runs in the latest run?
 --
 -- SQL concepts:
 --   WITH ... AS (...)   names a smaller query ("latest") so the main query can use it like a table
@@ -11,7 +11,7 @@ WITH latest AS (
     SELECT *
     FROM movie_scores
     WHERE run_date = (SELECT MAX(run_date) FROM movie_scores)
-      AND status = 'Released'
+      AND status = 'Final'
 )
 SELECT
     forecaster,

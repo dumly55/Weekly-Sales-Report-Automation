@@ -29,7 +29,7 @@ def _row(table: pd.DataFrame, **match) -> dict:
 
 
 def test_every_query_has_a_question_and_runs(insights):
-    assert len(insights) == len(list(SQL_DIR.glob("*.sql"))) == 7
+    assert len(insights) == len(list(SQL_DIR.glob("*.sql"))) == 8
     for insight in insights.values():
         assert insight.question != insight.name, f"{insight.name} is missing its '-- Question:' line"
 
@@ -56,7 +56,7 @@ def test_median_with_an_odd_number_of_movies(tmp_path):
             "forecaster": "Predictions",
             "forecast": 1.0,
             "actual": 1.0,
-            "status": "Released",
+            "status": "Final",
             "pct_error": misses,
             "accuracy_band": "",
         }
@@ -101,3 +101,11 @@ def test_accuracy_over_time_compares_with_the_previous_run(tmp_path):
     assert list(rows["avg_miss_pct"]) == [120.0, 70.0]
     assert pd.isna(rows.iloc[0]["change_vs_previous_run"])
     assert rows.iloc[1]["change_vs_previous_run"] == -50.0
+
+
+def test_in_theaters_progress(insights):
+    table = insights["08_in_theaters_progress"].table
+    hotel = _row(table, movie="Hotel", forecaster="Predictions")
+    assert (hotel["days_in_theaters"], hotel["pct_of_forecast_reached"], hotel["already_passed_forecast"]) == (20, 160.0, "Yes")
+    golf = _row(table, movie="Golf", forecaster="Predictions")
+    assert (golf["pct_of_forecast_reached"], golf["already_passed_forecast"]) == (60.0, "")

@@ -33,6 +33,10 @@ from .history import HISTORY_DB, fill_from_history, open_history, save_actuals, 
 from .main import OUTPUT_DIR, describe_error, next_free_path, setup_logging
 from .sql_insights import Insight, run_insights
 from .predictions import (
+    AWAITING_RESULT,
+    FINAL,
+    IN_THEATERS,
+    UPCOMING,
     Comparison,
     accuracy_stats,
     compare,
@@ -65,19 +69,90 @@ def _call(row: pd.Series, forecast: str) -> str:
     )
 
 
+def _join(items: list[str]) -> str:
+    """"a", "a and b", "a, b and c"."""
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def _names(titles: list[str], limit: int = 5) -> str:
+    shown = list(titles[:limit])
+    if len(titles) > limit:
+        shown.append(f"{len(titles) - limit} more")
+    return _join(shown)
+
+
+def _days_text(days) -> str:
+    if pd.isna(days):
+        return "in theaters"
+    return "on opening day" if days == 0 else f"after {days} day{'' if days == 1 else 's'}"
+
+
+def _status_overview(movies: pd.DataFrame) -> str:
+    def count(status: str) -> int:
+        return int((movies["run_status"] == status).sum())
+
+    sentence = f"{count(FINAL)} of the {len(movies)} matched movies have finished their run and are scored"
+    waiting = [
+        f"{n} {label}"
+        for n, label in [
+            (count(IN_THEATERS), "still in theaters"),
+            (count(UPCOMING), "not released yet"),
+            (count(AWAITING_RESULT), "finished but missing a result"),
+        ]
+        if n
+    ]
+    return sentence + (f". Not scored yet: {_join(waiting)}." if waiting else ".")
+
+
+def _in_theaters_findings(movies: pd.DataFrame) -> list[str]:
+    showing = movies[movies["run_status"] == IN_THEATERS].copy()
+    if showing.empty:
+        return []
+    showing["reached"] = showing["actual"] / showing["predicted"] * 100
+    showing = showing.sort_values("reached", ascending=False, na_position="last")
+
+    def describe(row) -> str:
+        if pd.isna(row["actual"]):
+            return f"{row['title']} ({_days_text(row['run_days'])}, no gross reported yet)"
+        return (
+            f"{row['title']} at {short_money(row['actual'])} {_days_text(row['run_days'])} "
+            f"({row['reached']:.0f}% of its {short_money(row['predicted'])} prediction)"
+        )
+
+    descriptions = [describe(row) for _, row in showing.iterrows()]
+    if len(descriptions) > 5:
+        descriptions = descriptions[:5] + [f"and {len(descriptions) - 5} more (see the In Theaters sheet)"]
+    findings = [f"Still in theaters, so not scored until their run ends: {'; '.join(descriptions)}."]
+
+    passed = list(showing.loc[showing["actual"] > showing["predicted"], "title"])
+    if passed:
+        one = len(passed) == 1
+        findings.append(
+            f"{_join(passed)} {'has' if one else 'have'} already earned more than predicted, so "
+            f"{'it was' if one else 'they were'} predicted too low whatever happens next."
+        )
+    return findings
+
+
+def _upcoming_finding(movies: pd.DataFrame) -> str | None:
+    upcoming = movies[(movies["run_status"] == UPCOMING) & movies["run_days"].notna()]
+    if upcoming.empty:
+        return None
+    nxt = upcoming.loc[upcoming["run_days"].astype(int).idxmin()]
+    days = int(nxt["run_days"])
+    when = "opens today" if days == 0 else f"opens in {days} day{'' if days == 1 else 's'}"
+    return f"Next release: {nxt['title']} {when}, predicted at {short_money(nxt['predicted'])}."
+
+
 def prediction_findings(result: Comparison) -> list[str]:
     """Plain-English findings from fixed rules, so the same sheets always give the same text."""
     movies = result.movies
-    released = movies[movies["released"]]
-    pending = len(movies) - len(released)
-    findings = [
-        f"{len(released)} of the {len(movies)} matched movies have been released and scored so far"
-        + (f"; {pending} {'is' if pending == 1 else 'are'} still waiting on results." if pending else ".")
-    ]
+    scored = movies[movies["scored"]]
+    findings = [_status_overview(movies)]
 
     stats = accuracy_stats(movies, "predicted")
     if stats is None:
-        return findings + _data_notes(result)
+        return findings + _progress_notes(movies) + _data_notes(result)
 
     n = stats["scored"]
     typical = f"The predictions were typically off by {stats['median_abs_pct']:.0f}% (median"
@@ -102,19 +177,36 @@ def prediction_findings(result: Comparison) -> list[str]:
         total += ", so misses in both directions largely cancelled out"
     findings.append(total + ".")
 
-    errors = released["predicted_pct_error"].dropna().abs()
-    findings.append(f"Best call: {_call(released.loc[errors.idxmin()], 'predicted')}.")
-    findings.append(f"Biggest miss: {_call(released.loc[errors.idxmax()], 'predicted')}.")
+    errors = scored["predicted_pct_error"].dropna().abs()
+    findings.append(f"Best call: {_call(scored.loc[errors.idxmin()], 'predicted')}.")
+    findings.append(f"Biggest miss: {_call(scored.loc[errors.idxmax()], 'predicted')}.")
 
     tracker = accuracy_stats(movies, "projection")
     if tracker is not None:
-        both = released.dropna(subset=["predicted_pct_error", "projection_pct_error"])
+        both = scored.dropna(subset=["predicted_pct_error", "projection_pct_error"])
         wins = int((both["predicted_pct_error"].abs() < both["projection_pct_error"].abs()).sum())
         findings.append(
             f"Against the tracker's own projections (typically off by {tracker['median_abs_pct']:.0f}%), "
             f"the predictions were closer on {wins} of {len(both)} movies."
         )
-    return findings + _data_notes(result)
+    return findings + _progress_notes(movies) + _data_notes(result)
+
+
+def _progress_notes(movies: pd.DataFrame) -> list[str]:
+    """Movies not scored yet: still in theaters, the next release, and finished runs missing a result."""
+    notes = _in_theaters_findings(movies)
+    upcoming = _upcoming_finding(movies)
+    if upcoming:
+        notes.append(upcoming)
+    awaiting = list(movies.loc[movies["run_status"] == AWAITING_RESULT, "title"])
+    if awaiting:
+        one = len(awaiting) == 1
+        notes.append(
+            f"{len(awaiting)} {'movie has' if one else 'movies have'} finished {'its' if one else 'their'} run but "
+            f"{'has' if one else 'have'} no result in the results sheet yet, so {'it isn' if one else 'they aren'}'t "
+            f"scored: {_names(awaiting)}."
+        )
+    return notes
 
 
 def _data_notes(result: Comparison) -> list[str]:
@@ -174,10 +266,44 @@ class ScorecardRow:
 
 
 def scorecard(result: Comparison) -> list[ScorecardRow]:
-    """Simple measures of the predictions' accuracy, each listing the movies behind it."""
+    """Simple measures of the predictions' accuracy, each listing the movies behind it, followed by
+    the movies that aren't scored yet (in theaters, upcoming, or missing a result)."""
     stats = accuracy_stats(result.movies, "predicted")
-    if stats is None:
-        return []
+    rows = _accuracy_rows(result, stats) if stats is not None else []
+    return rows + _not_scored_rows(result.movies)
+
+
+def _not_scored_rows(movies: pd.DataFrame) -> list[ScorecardRow]:
+    total = len(movies)
+    rows = []
+
+    showing = movies[movies["run_status"] == IN_THEATERS].copy()
+    if not showing.empty:
+        showing["reached"] = showing["actual"] / showing["predicted"] * 100
+        showing = showing.sort_values("reached", ascending=False, na_position="last")
+        labels = [
+            f"{r.title} (no gross yet, {_days_text(r.run_days)})"
+            if pd.isna(r.actual)
+            else f"{r.title} ({short_money(r.actual)} {_days_text(r.run_days)}, {r.reached:.0f}% of prediction)"
+            for r in showing.itertuples()
+        ]
+        rows.append(ScorecardRow("Still in theaters (not scored yet)", f"{len(showing)} of {total}", labels))
+
+    upcoming = movies[movies["run_status"] == UPCOMING].sort_values(["run_days", "release_date"], na_position="last")
+    if not upcoming.empty:
+        labels = [
+            r.title if pd.isna(r.run_days) else f"{r.title} ({'opens today' if r.run_days == 0 else f'in {r.run_days} days'})"
+            for r in upcoming.itertuples()
+        ]
+        rows.append(ScorecardRow("Upcoming", f"{len(upcoming)} of {total}", labels))
+
+    awaiting = list(movies.loc[movies["run_status"] == AWAITING_RESULT, "title"])
+    if awaiting:
+        rows.append(ScorecardRow("Finished, but no result in the sheet yet", f"{len(awaiting)} of {total}", awaiting))
+    return rows
+
+
+def _accuracy_rows(result: Comparison, stats: dict) -> list[ScorecardRow]:
     scored = result.movies[result.movies["predicted_pct_error"].notna()].copy()
     scored["abs_error"] = scored["predicted_pct_error"].abs()
     n = len(scored)
@@ -186,7 +312,7 @@ def scorecard(result: Comparison) -> list[ScorecardRow]:
         return [_movie_label(t, p) for t, p in zip(movies["title"], movies["predicted_pct_error"])]
 
     rows = [
-        ScorecardRow("Movies scored", f"{n} of {len(result.movies)} matched movies"),
+        ScorecardRow("Finished and scored", f"{n} of {len(result.movies)} matched movies"),
         ScorecardRow("Typical miss (median)", f"{stats['median_abs_pct']:.0f}%"),
     ]
     scored["band"] = scored["abs_error"].map(accuracy_band)
@@ -247,7 +373,7 @@ def _build_scorecard_sheet(ws, result: Comparison, findings: list[str], as_of: d
     _write_title(ws, f"Prediction Accuracy as of {as_of}", span_cols=3)
     rows = scorecard(result)
     if not rows:
-        ws.cell(row=3, column=1, value="No released movies to score yet.")
+        ws.cell(row=3, column=1, value="No matched movies to show yet.")
         _write_findings(ws, findings, start_row=5)
         return
 
@@ -305,7 +431,7 @@ def _for_excel(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _build_movies_sheet(ws, result: Comparison) -> None:
-    released = result.movies[result.movies["released"]].copy()
+    released = result.movies[result.movies["scored"]].copy()
 
     def closer(row):
         p, t = row["predicted_pct_error"], row["projection_pct_error"]
@@ -325,7 +451,7 @@ def _build_movies_sheet(ws, result: Comparison) -> None:
             "Closer": released.apply(closer, axis=1) if len(released) else [],
         }
     )
-    _write_title(ws, "Movie by Movie: released movies, forecasts vs actual worldwide gross", span_cols=8)
+    _write_title(ws, "Movie by Movie: finished runs, forecasts vs final worldwide gross", span_cols=8)
     header_row = 3
     last_row = _write_dataframe(
         ws, _for_excel(table), header_row, number_formats={1: "yyyy-mm-dd", 2: MONEY_FORMAT, 3: MONEY_FORMAT, 4: MONEY_FORMAT}
@@ -335,22 +461,56 @@ def _build_movies_sheet(ws, result: Comparison) -> None:
     _add_table_polish(ws, header_row, max(last_row, header_row), last_col=len(table.columns))
 
 
-def _build_upcoming_sheet(ws, result: Comparison) -> None:
-    upcoming = result.movies[~result.movies["released"]]
+def _build_in_theaters_sheet(ws, result: Comparison) -> None:
+    showing = result.movies[result.movies["run_status"] == IN_THEATERS]
+    reached = showing["actual"] / showing["predicted"]
     table = pd.DataFrame(
         {
-            "Movie": upcoming["title"],
-            "Release Date": upcoming["release_date"],
-            "Predicted": upcoming["predicted"],
-            "Tracker Projection": upcoming["projection"],
+            "Movie": showing["title"],
+            "Release Date": showing["release_date"],
+            "Days in Theaters": showing["run_days"],
+            "Gross So Far": showing["actual"],
+            "Predicted": showing["predicted"],
+            "% of Prediction Reached": reached,
+            "Tracker Projection": showing["projection"],
+            "% of Tracker Reached": showing["actual"] / showing["projection"],
+            "Already Passed Prediction": (showing["actual"] > showing["predicted"]).map({True: "Yes", False: ""}),
         }
-    )
-    _write_title(ws, "Upcoming: matched movies still waiting on an actual result", span_cols=4)
+    ).sort_values("% of Prediction Reached", ascending=False, na_position="last")
+    _write_title(ws, "In Theaters: still earning, so not scored until the run ends", span_cols=9)
     header_row = 3
     last_row = _write_dataframe(
-        ws, _for_excel(table), header_row, number_formats={1: "yyyy-mm-dd", 2: MONEY_FORMAT, 3: MONEY_FORMAT}
+        ws,
+        _for_excel(table),
+        header_row,
+        number_formats={1: "yyyy-mm-dd", 3: MONEY_FORMAT, 4: MONEY_FORMAT, 5: "0%", 6: MONEY_FORMAT, 7: "0%"},
     )
     ws.column_dimensions["A"].width = 38
+    _add_table_polish(ws, header_row, max(last_row, header_row), last_col=len(table.columns))
+
+
+def _build_upcoming_sheet(ws, result: Comparison) -> None:
+    waiting = result.movies[result.movies["run_status"].isin([UPCOMING, AWAITING_RESULT])]
+    waiting = waiting.sort_values(["run_status", "run_days", "release_date"], ascending=[False, True, True], na_position="last")
+    table = pd.DataFrame(
+        {
+            "Movie": waiting["title"],
+            "Status": waiting["run_status"].map(
+                {UPCOMING: "Upcoming", AWAITING_RESULT: "Finished, no result in the sheet yet"}
+            ),
+            "Release Date": waiting["release_date"],
+            "Days Until Release": waiting["run_days"].where(waiting["run_status"] == UPCOMING),
+            "Predicted": waiting["predicted"],
+            "Tracker Projection": waiting["projection"],
+        }
+    )
+    _write_title(ws, "Upcoming: not released yet, plus finished movies still missing a result", span_cols=6)
+    header_row = 3
+    last_row = _write_dataframe(
+        ws, _for_excel(table), header_row, number_formats={2: "yyyy-mm-dd", 4: MONEY_FORMAT, 5: MONEY_FORMAT}
+    )
+    ws.column_dimensions["A"].width = 38
+    ws.column_dimensions["B"].width = 34
     _add_table_polish(ws, header_row, max(last_row, header_row), last_col=len(table.columns))
 
 
@@ -403,9 +563,16 @@ def build_prediction_workbook(
     scorecard_ws.title = "Scorecard"
     _build_scorecard_sheet(scorecard_ws, result, findings, as_of)
     _build_movies_sheet(wb.create_sheet("Movie by Movie"), result)
+    _build_in_theaters_sheet(wb.create_sheet("In Theaters"), result)
     _build_upcoming_sheet(wb.create_sheet("Upcoming"), result)
     _build_unmatched_sheet(wb.create_sheet("Unmatched"), result)
-    tab_colors = {"Scorecard": "1F4E78", "Movie by Movie": "2E7D32", "Upcoming": "6A1B9A", "Unmatched": "757575"}
+    tab_colors = {
+        "Scorecard": "1F4E78",
+        "Movie by Movie": "2E7D32",
+        "In Theaters": "C62828",
+        "Upcoming": "6A1B9A",
+        "Unmatched": "757575",
+    }
     if insights:
         _build_insights_sheet(wb.create_sheet("SQL Insights"), insights)
         tab_colors["SQL Insights"] = "EF6C00"
@@ -416,11 +583,15 @@ def build_prediction_workbook(
 
 
 def tableau_rows(result: Comparison) -> pd.DataFrame:
-    """Long, tidy table for Tableau: one row per movie per forecaster that made a forecast."""
+    """Long, tidy table for Tableau: one row per movie per forecaster that made a forecast.
+
+    `status` is the run status (Final, In theaters, Upcoming, Awaiting result). Error columns are
+    only filled for Final movies; movies in theaters get their gross so far and progress instead."""
     frames = []
     for forecast, label in FORECASTS.items():
         movies = result.movies[result.movies[forecast].notna()]
         pct = movies[f"{forecast}_pct_error"]
+        showing = movies["run_status"] == IN_THEATERS
         frames.append(
             pd.DataFrame(
                 {
@@ -428,13 +599,17 @@ def tableau_rows(result: Comparison) -> pd.DataFrame:
                     "release_date": movies["release_date"].dt.strftime("%Y-%m-%d"),
                     "forecaster": label,
                     "forecast": movies[forecast],
-                    "actual": movies["actual"].where(movies["released"]),
-                    "status": movies["released"].map({True: "Released", False: "Upcoming"}),
-                    "error": (movies[forecast] - movies["actual"]).where(movies["released"]),
+                    "actual": movies["actual"].where(movies["scored"]),
+                    "status": movies["run_status"],
+                    "error": (movies[forecast] - movies["actual"]).where(movies["scored"]),
                     "pct_error": pct.round(2),
                     "abs_pct_error": pct.abs().round(2),
                     "direction": pct.map(lambda v: "" if pd.isna(v) else "Too high" if v > 0 else "Too low" if v < 0 else "Exact"),
                     "accuracy_band": pct.abs().map(lambda v: "" if pd.isna(v) else accuracy_band(v)),
+                    "gross_so_far": movies["actual"].where(showing),
+                    "pct_of_forecast_reached": (movies["actual"] / movies[forecast] * 100).where(showing).round(1),
+                    "days_in_theaters": movies["run_days"].where(showing),
+                    "days_until_release": movies["run_days"].where(movies["run_status"] == UPCOMING),
                 }
             )
         )

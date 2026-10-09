@@ -15,7 +15,7 @@ WITH latest AS (
     SELECT *
     FROM movie_scores
     WHERE run_date = (SELECT MAX(run_date) FROM movie_scores)
-      AND status = 'Released'
+      AND status = 'Final'
 ),
 ranked AS (
     SELECT

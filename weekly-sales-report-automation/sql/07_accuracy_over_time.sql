@@ -1,4 +1,4 @@
--- Question: How has each forecaster's accuracy changed from run to run, as more movies are released?
+-- Question: How has each forecaster's accuracy changed from run to run, as more movies finish their run?
 --
 -- This is the query that needs history: it looks across every saved run, not just the latest.
 -- With only one run saved, the change column is empty.
@@ -15,7 +15,7 @@ WITH per_run AS (
         COUNT(*)                       AS movies_scored,
         ROUND(AVG(ABS(pct_error)), 1)  AS avg_miss_pct
     FROM movie_scores
-    WHERE status = 'Released'
+    WHERE status = 'Final'
     GROUP BY run_date, forecaster
 )
 SELECT

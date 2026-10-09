@@ -118,13 +118,24 @@ python -m src.prediction_report --predictions "<link or file>" --actuals "<link 
 ```
 
 - **Predictions sheet** needs a title column (e.g. `Movie Title`) and a worldwide prediction column (e.g. `Worldwide Total`).
-- **Results sheet** needs a title column and an actual worldwide gross column (e.g. `Worldwide Actual`). If it also has its own projection (e.g. `Worldwide Proj.`) and a release date, those are used too.
+- **Results sheet** needs a title column and an actual worldwide gross column (e.g. `Worldwide Actual`). If it also has its own projection (e.g. `Worldwide Proj.`), a release date, and a status column (e.g. `Countdown`), those are used too.
+- **Run status:** each movie is classified from its status cell, so only finished runs are scored:
+
+  | Status in the sheet | Classified as | How it's treated |
+  |---|---|---|
+  | `✅ Run Complete`, with a result | **Final** | Scored |
+  | `🎬 In Theaters for 21 days` / `RELEASE DAY` | **In theaters** | Not scored yet: its gross is still growing, so a full-run prediction would look too high. Shown with gross so far, days in theaters, % of each prediction reached, and a flag if it's already passed the prediction (meaning it was predicted too low) |
+  | `70 Days` | **Upcoming** | Shown with days until release |
+  | `✅ Run Complete`, but no result | **Awaiting result** | Listed until the sheet (or the results history) has a number |
+
+  Without a status column, any movie with a result counts as final.
 - **Matching titles:** titles are matched across the sheets ignoring emojis, case and punctuation. Close spellings also match (`Coyote v. Acme` / `Coyote vs. Acme`), but only between titles with the same numbers, so `Toy Story 5` never matches `Toy Story 4`. For movies listed under different names, add `--title-map "Minions 3=MINIONS AND MONSTERS; Jumanji 3=JUMANJI: OPEN WORLD"` (results title=predictions title, separated by semicolons).
 
-The output is `output/prediction_accuracy_<date>.xlsx`, with four sheets:
-- **Scorecard:** simple measures, each listing the movies behind it: typical miss; how many predictions were nailed (within 10%), close (10–25%), off (25–50%) or way off (over 50%); too high vs too low; and which movies beat the tracker. Then the key findings, then the detailed side-by-side stats for both forecasters. Errors are relative to the actual result, and medians lead, because one wild miss can dominate an average.
-- **Movie by Movie:** every released movie, with each forecast's % error and which forecaster was closer.
-- **Upcoming:** matched movies still waiting on an actual result.
+The output is `output/prediction_accuracy_<date>.xlsx`, with these sheets:
+- **Scorecard:** simple measures, each listing the movies behind it: typical miss; how many predictions were nailed (within 10%), close (10–25%), off (25–50%) or way off (over 50%); too high vs too low; and which movies beat the tracker. Then what isn't scored yet (in theaters, upcoming, awaiting a result), the key findings, and the detailed side-by-side stats for both forecasters. Errors are relative to the actual result, and medians lead, because one wild miss can dominate an average.
+- **Movie by Movie:** every finished run, with each forecast's % error and which forecaster was closer.
+- **In Theaters:** gross so far, days in theaters, % of each forecast reached, and whether it's already passed the prediction.
+- **Upcoming:** movies not released yet (with days until release), plus finished movies still missing a result.
 - **Unmatched:** titles found in only one sheet, so nothing is silently dropped.
 - **SQL Insights:** the results of every query in the `sql/` folder (below), run on the results history.
 
@@ -143,6 +154,9 @@ The output is `output/prediction_accuracy_<date>.xlsx`, with four sheets:
 | `05_accuracy_by_release_month` | Were predictions better in some months? | `strftime` dates, `GROUP BY` an expression |
 | `06_biggest_misses` | Each forecaster's 5 biggest misses | `RANK() OVER`, filtering a window result |
 | `07_accuracy_over_time` | How has accuracy changed run to run? | `LAG() OVER` across saved runs |
+| `08_in_theaters_progress` | How much of each forecast have in-theater movies earned so far? | arithmetic, `NULLIF`, `CASE WHEN` |
+
+The accuracy queries (01–07) count finished runs only (`status = 'Final'`).
 
 Two **Tableau-ready CSVs** are written, both in long, tidy format (one row per movie per forecaster) so Tableau can use them without reshaping:
 - `prediction_accuracy_<date>.csv`, next to the report: this run's forecast, actual, error, % error, direction (too high/too low), accuracy band and status (released/upcoming).
@@ -154,7 +168,7 @@ Two **Tableau-ready CSVs** are written, both in long, tidy format (one row per m
 pytest
 ```
 
-149 tests covering the SQL queries (`test_sql_insights.py`, including a check that the SQL median matches the Python one), the results history (`test_history.py`), the prediction scoring and its report (`test_predictions.py`, `test_prediction_report.py`), the findings rules (`test_findings.py`), the cleaning rules and messy-value parsing (`test_clean.py`), column recognition for differently shaped sheets (`test_normalize.py`), KPI/week-boundary math and summary formatting (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
+160 tests covering the SQL queries (`test_sql_insights.py`, including a check that the SQL median matches the Python one), the results history (`test_history.py`), the prediction scoring and its report (`test_predictions.py`, `test_prediction_report.py`), the findings rules (`test_findings.py`), the cleaning rules and messy-value parsing (`test_clean.py`), column recognition for differently shaped sheets (`test_normalize.py`), KPI/week-boundary math and summary formatting (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
 
 ## Scheduled weekly run
 

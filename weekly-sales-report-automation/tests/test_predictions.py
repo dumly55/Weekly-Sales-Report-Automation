@@ -3,6 +3,7 @@ import pytest
 
 from src.predictions import (
     accuracy_stats,
+    classify_run,
     clean_title,
     compare,
     load_actuals,
@@ -61,16 +62,17 @@ class TestParseTitleMap:
 
 
 def _actuals_sheet():
-    # Shaped like a real tracker: title rows above the header, a repeated column name, day-first dates.
+    # Shaped like a real tracker: title rows above the header, a repeated column name, day-first dates,
+    # and a Countdown column saying whether each run is complete, still in theaters, or upcoming.
     return pd.DataFrame(
         [
-            [None, "09/10/2026 13:31:15", None, None, None, None],
-            [None, "Movie", "Release Date", "Worldwide Proj.", "Worldwide Actual", "Worldwide Actual"],
-            [None, "Mercy 👮🏻", "23/01/2026", "$69,543,796", "$54,709,856", "$54,709,856"],
-            [None, "Send Help 🏝", "30/01/2026", "$103,054,657", "$94,041,481", "$94,041,481"],
-            [None, "Dune Part Three * ⛱️", "18/12/2026", "$840,364,215", None, None],
+            [None, "09/10/2026 13:31:15", None, None, None, None, None],
+            [None, "Movie", "Release Date", "Countdown", "Worldwide Proj.", "Worldwide Actual", "Worldwide Actual"],
+            [None, "Mercy 👮🏻", "23/01/2026", "✅ Run Complete", "$69,543,796", "$54,709,856", "$54,709,856"],
+            [None, "Send Help 🏝", "30/01/2026", "🎬 In Theaters for 21 days", "$103,054,657", "$94,041,481", "$94,041,481"],
+            [None, "Dune Part Three * ⛱️", "18/12/2026", "70 Days", "$840,364,215", None, None],
         ],
-        columns=["Unnamed: 0", "2026 Movie Predictions", "Unnamed: 2", "Unnamed: 3", "Unnamed: 4", "Unnamed: 5"],
+        columns=["Unnamed: 0", "2026 Movie Predictions", "Unnamed: 2", "Unnamed: 3", "Unnamed: 4", "Unnamed: 5", "Unnamed: 6"],
     )
 
 
@@ -130,15 +132,38 @@ class TestLoadActuals:
         assert calls == ["results.csv"]
 
 
+class TestClassifyRun:
+    @pytest.mark.parametrize(
+        "status, has_result, expected",
+        [
+            ("✅ Run Complete", True, ("Final", None)),
+            ("✅ Run Complete", False, ("Awaiting result", None)),
+            ("🎬 In Theaters for 21 days", True, ("In theaters", 21)),
+            ("🎬 In Theaters for 1 day", False, ("In theaters", 1)),
+            ("RELEASE DAY", False, ("In theaters", 0)),
+            ("70 Days", False, ("Upcoming", 70)),
+            ("Coming soon", False, ("Upcoming", None)),
+            (None, True, ("Final", None)),
+            (None, False, ("Upcoming", None)),
+        ],
+    )
+    def test_reads_the_status_wording(self, status, has_result, expected):
+        assert classify_run(status, has_result) == expected
+
+
 class TestCompare:
-    def test_scores_released_movies_and_lists_the_rest(self):
+    def test_only_finished_runs_are_scored(self):
         result = compare(read_predictions(_predictions_sheet()), read_actuals(_actuals_sheet()))
         movies = result.movies.set_index("title")
 
         assert list(result.movies["title"]) == ["Mercy", "Send Help", "Dune Part Three"]
+        assert list(result.movies["run_status"]) == ["Final", "In theaters", "Upcoming"]
+        assert list(result.movies["run_days"].fillna(-1)) == [-1, 21, 70]
         assert movies.loc["Mercy", "predicted_pct_error"] == pytest.approx((41_470_588.24 - 54_709_856) / 54_709_856 * 100)
         assert movies.loc["Mercy", "projection_pct_error"] == pytest.approx((69_543_796 - 54_709_856) / 54_709_856 * 100)
-        assert not movies.loc["Dune Part Three", "released"]
+        assert not movies.loc["Send Help", "scored"], "still in theaters: its gross so far isn't a final result"
+        assert pd.isna(movies.loc["Send Help", "predicted_pct_error"])
+        assert movies.loc["Send Help", "actual"] == pytest.approx(94_041_481), "the gross so far is kept"
         assert pd.isna(movies.loc["Dune Part Three", "predicted_pct_error"])
         assert result.unmatched_predictions == ["MELANIA"]
         assert result.unmatched_actuals == []

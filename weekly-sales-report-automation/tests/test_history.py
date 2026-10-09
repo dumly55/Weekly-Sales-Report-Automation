@@ -44,7 +44,7 @@ class TestMovieScores:
     def test_scores_are_saved_with_nulls_for_upcoming_movies(self, tmp_path):
         scores = _scores(
             [
-                ("Mercy", "2026-01-23", "Predictions", 40.0, 50.0, "Released", -20.0, "Close"),
+                ("Mercy", "2026-01-23", "Predictions", 40.0, 50.0, "Final", -20.0, "Close"),
                 ("Dune Part Three", None, "Predictions", 900.0, None, "Upcoming", None, ""),
             ]
         )
@@ -55,8 +55,8 @@ class TestMovieScores:
         assert rows == [("Dune Part Three", None, None, None, None), ("Mercy", "2026-01-23", 50.0, -20.0, "Close")]
 
     def test_rerunning_on_the_same_day_replaces_that_days_scores(self, tmp_path):
-        first = _scores([("Mercy", None, "Predictions", 40.0, 50.0, "Released", -20.0, "Close")])
-        second = _scores([("Mercy", None, "Predictions", 45.0, 50.0, "Released", -10.0, "Nailed it")])
+        first = _scores([("Mercy", None, "Predictions", 40.0, 50.0, "Final", -20.0, "Close")])
+        second = _scores([("Mercy", None, "Predictions", 45.0, 50.0, "Final", -10.0, "Nailed it")])
         with closing(open_history(tmp_path / "history.sqlite")) as conn:
             save_scores(first, conn, date(2026, 10, 5))
             save_scores(first, conn, date(2026, 10, 12))
@@ -96,7 +96,7 @@ class TestRunWithHistory:
         actuals.write_text("Movie,Worldwide Actual\nMercy,\nSend Help,$100\n", encoding="utf-8")
         output = run(str(predictions), str(actuals), date(2026, 10, 12), history_path=history, save_history=True)
 
-        assert output.result.movies["released"].sum() == 2
+        assert output.result.movies["scored"].sum() == 2
         assert output.result.restored_from_history == ["Mercy"]
         assert (
             "1 movie had no result in the results sheet this time, so the last known result was used: Mercy."
@@ -112,3 +112,19 @@ class TestRunWithHistory:
         run(str(predictions), str(actuals), date(2026, 10, 5), history_path=tmp_path / "history.sqlite")
         assert not (tmp_path / "history.sqlite").exists()
 
+
+
+def test_older_history_files_are_upgraded(tmp_path):
+    path = tmp_path / "history.sqlite"
+    with closing(sqlite3.connect(path)) as old:
+        old.execute(
+            "CREATE TABLE movie_scores (run_date TEXT, movie TEXT, release_date TEXT, forecaster TEXT, forecast REAL, "
+            "actual REAL, status TEXT, pct_error REAL, accuracy_band TEXT, PRIMARY KEY (run_date, movie, forecaster))"
+        )
+        old.execute("INSERT INTO movie_scores VALUES ('2026-10-01', 'Mercy', NULL, 'Predictions', 40, 50, 'Released', -20, 'Close')")
+        old.commit()
+
+    with closing(open_history(path)) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(movie_scores)")}
+        assert {"gross_so_far", "days_in_theaters", "days_until_release"} <= columns
+        assert conn.execute("SELECT status FROM movie_scores").fetchall() == [("Final",)]

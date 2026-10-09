@@ -19,7 +19,7 @@ from tkcalendar import DateEntry
 from .main import describe_error, run_pipeline, setup_logging
 from .prediction_report import scorecard
 from .prediction_report import run as run_predictions
-from .predictions import parse_title_map
+from .predictions import IN_THEATERS, parse_title_map
 from .report import format_wow
 
 WINDOW_TITLE = "Report Generator"
@@ -353,8 +353,10 @@ class PredictionTab:
             messagebox.showerror("Scoring failed", payload)
             return
         result, findings, out_path = payload.result, payload.findings, payload.out_path
-        scored = int(result.movies["released"].sum())
-        self.status_var.set(f"Done. Scored {scored} released movie{'' if scored == 1 else 's'}.")
+        scored = int(result.movies["scored"].sum())
+        showing = int((result.movies["run_status"] == IN_THEATERS).sum())
+        status = f"Done. Scored {scored} finished movie{'' if scored == 1 else 's'}"
+        self.status_var.set(status + (f"; {showing} still in theaters." if showing else "."))
         self._show_results(result, findings, out_path)
 
     def _show_results(self, result, findings: list[str], out_path: Path) -> None:
