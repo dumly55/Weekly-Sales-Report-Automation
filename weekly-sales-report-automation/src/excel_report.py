@@ -68,11 +68,16 @@ def _build_summary_sheet(ws: Worksheet, data: WeeklyReportData) -> None:
     # WoW values come from `kpi_rows` directly (not re-read from the cell) because pandas
     # coerces a mixed [float, None] column to float64 with NaN in place of None, and NaN
     # is an instance of float — reading it back would misidentify "n/a" rows as numeric.
-    for offset, (_, _, _, wow_value, kind) in enumerate(kpi_rows):
+    for offset, (_, this_week, last_week, wow_value, kind) in enumerate(kpi_rows):
         r = header_row + 1 + offset
         value_format = currency_format if kind == "currency" else COUNT_FORMAT
-        ws.cell(row=r, column=2).number_format = value_format
-        ws.cell(row=r, column=3).number_format = value_format
+        for col, value in ((2, this_week), (3, last_week)):
+            cell = ws.cell(row=r, column=col)
+            if value is None:  # e.g. customers, when the sheet has no customer column
+                cell.value = "n/a"
+                cell.alignment = Alignment(horizontal="center")
+            else:
+                cell.number_format = value_format
 
         wow_cell = ws.cell(row=r, column=4)
         if wow_value is None:

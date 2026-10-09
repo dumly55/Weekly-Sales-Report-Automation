@@ -98,6 +98,21 @@ class TestBuildWorkbook:
             assert ws.freeze_panes == "A4"
             assert ws.auto_filter.ref is not None
 
+    def test_customers_show_n_a_without_customer_ids(self, quality_log, tmp_path):
+        sales_df = pd.DataFrame(
+            [
+                _sales_row("600001", "A1", "Widget", 10, "2011-11-21 10:00:00", 10.0, None, "United Kingdom"),
+                _sales_row("500001", "A1", "Widget", 10, "2011-11-14 10:00:00", 10.0, None, "United Kingdom"),
+            ]
+        )
+        data = build_report_data(sales_df, sales_df.iloc[0:0], date(2011, 11, 24))
+        out_path = tmp_path / "report.xlsx"
+        build_workbook(data, quality_log, out_path)
+
+        ws = load_workbook(out_path)["Summary"]
+        assert ws["A7"].value == "Unique Customers"
+        assert (ws["B7"].value, ws["C7"].value, ws["D7"].value) == ("n/a", "n/a", "n/a")
+
     def test_uses_the_report_currency_in_labels_and_formats(self, report_data, quality_log, tmp_path):
         out_path = tmp_path / "report.xlsx"
         build_workbook(dataclasses.replace(report_data, currency="$"), quality_log, out_path)

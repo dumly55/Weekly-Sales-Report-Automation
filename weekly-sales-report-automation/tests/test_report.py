@@ -183,6 +183,12 @@ class TestBuildReportData:
         assert data.wow["revenue"] is None
         assert data.wow["orders"] is None
 
+    def test_customers_are_not_counted_without_customer_ids(self, sales_df, cancellations_df):
+        data = build_report_data(sales_df.assign(CustomerID=float("nan")), cancellations_df, AS_OF_DATE)
+        assert data.current["customers"] is None and data.previous["customers"] is None
+        assert data.wow["customers"] is None
+        assert data.summary_rows()[3] == ("Unique Customers", "n/a", "n/a", None)
+
     def test_daily_and_breakdown_frames_included(self, sales_df, cancellations_df):
         data = build_report_data(sales_df, cancellations_df, AS_OF_DATE)
         assert len(data.daily) == 7

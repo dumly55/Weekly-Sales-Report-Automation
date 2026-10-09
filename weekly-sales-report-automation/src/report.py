@@ -27,19 +27,19 @@ def _filter_range(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> p
     return df[(df["InvoiceDate"] >= start) & (df["InvoiceDate"] < end)]
 
 
-def _summarize(sales_week: pd.DataFrame, cancellations_week: pd.DataFrame) -> dict:
+def _summarize(sales_week: pd.DataFrame, cancellations_week: pd.DataFrame, count_customers: bool) -> dict:
     return {
         "revenue": float(sales_week["LineTotal"].sum()),
         "units": int(sales_week["Quantity"].sum()),
         "orders": int(sales_week["InvoiceNo"].nunique()),
-        "customers": int(sales_week["CustomerID"].nunique()),
+        "customers": int(sales_week["CustomerID"].nunique()) if count_customers else None,
         "cancellations_count": int(cancellations_week["InvoiceNo"].nunique()),
         "cancellations_value": float(-cancellations_week["LineTotal"].sum()),
     }
 
 
-def pct_change(current: float, previous: float) -> float | None:
-    if previous == 0:
+def pct_change(current: float | None, previous: float | None) -> float | None:
+    if not previous:  # 0, or None when the metric can't be counted
         return None
     return (current - previous) / previous * 100
 
@@ -92,11 +92,15 @@ class WeeklyReportData:
     def summary_rows(self) -> list[tuple[str, str, str, float | None]]:
         """Display-formatted (metric, this week, last week, raw WoW %) rows shared by the CLI and GUI."""
         c, p, cur = self.current, self.previous, self.currency
+
+        def count(value: int | None) -> str:
+            return "n/a" if value is None else f"{value:,}"
+
         return [
             ("Revenue", f"{cur}{c['revenue']:,.2f}", f"{cur}{p['revenue']:,.2f}", self.wow["revenue"]),
-            ("Units Sold", f"{c['units']:,}", f"{p['units']:,}", self.wow["units"]),
-            ("Orders", f"{c['orders']:,}", f"{p['orders']:,}", self.wow["orders"]),
-            ("Unique Customers", f"{c['customers']:,}", f"{p['customers']:,}", self.wow["customers"]),
+            ("Units Sold", count(c["units"]), count(p["units"]), self.wow["units"]),
+            ("Orders", count(c["orders"]), count(p["orders"]), self.wow["orders"]),
+            ("Unique Customers", count(c["customers"]), count(p["customers"]), self.wow["customers"]),
         ]
 
     def summary_markdown(self) -> str:
@@ -128,8 +132,10 @@ def build_report_data(
     sales_prev = _filter_range(sales_df, prev_start, prev_end)
     cancels_prev = _filter_range(cancellations_df, prev_start, prev_end)
 
-    current = _summarize(sales_week, cancels_week)
-    previous = _summarize(sales_prev, cancels_prev)
+    # A sheet without a customer column has no IDs at all, so customers can't be counted (not zero).
+    count_customers = bool(sales_df["CustomerID"].notna().any())
+    current = _summarize(sales_week, cancels_week, count_customers)
+    previous = _summarize(sales_prev, cancels_prev, count_customers)
     wow = {key: pct_change(current[key], previous[key]) for key in ("revenue", "units", "orders", "customers")}
 
     return WeeklyReportData(
