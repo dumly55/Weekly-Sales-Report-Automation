@@ -154,7 +154,8 @@ def _build_quality_log_sheet(ws: Worksheet, quality_log: QualityLog) -> None:
         "unreadable_rows_dropped": "Rows dropped because the date, quantity or price couldn't be read",
         "cancellations_separated": "Cancelled-order lines separated into returns reporting",
         "missing_customer_id": "Sales rows with a missing CustomerID (kept, revenue still counted)",
-        "non_positive_price_dropped": "Non-product / adjustment rows dropped (zero or negative price/qty)",
+        "non_product_dropped": "Postage, fees and other non-product lines dropped",
+        "non_positive_price_dropped": "Rows dropped for a zero or negative price or quantity",
         "rows_out": "Clean product-sale rows used for KPI calculations",
     }
     df = pd.DataFrame(

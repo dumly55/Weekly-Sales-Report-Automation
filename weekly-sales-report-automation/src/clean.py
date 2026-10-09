@@ -10,6 +10,13 @@ from .normalize import to_datetime, to_number
 
 logger = logging.getLogger(__name__)
 
+# Whole descriptions (lowercased) of lines that aren't products, like postage and fees. These would
+# otherwise show up as top sellers: "DOTCOM POSTAGE" is the demo dataset's #1 line in some weeks.
+NON_PRODUCT_DESCRIPTIONS = {
+    "postage", "dotcom postage", "carriage", "shipping", "bank charges", "amazon fee",
+    "manual", "discount", "samples", "adjust bad debt", "cruk commission",
+}
+
 
 class QualityLog(NamedTuple):
     rows_in: int
@@ -17,6 +24,7 @@ class QualityLog(NamedTuple):
     unreadable_rows_dropped: int
     cancellations_separated: int
     missing_customer_id: int
+    non_product_dropped: int
     non_positive_price_dropped: int
     rows_out: int
 
@@ -59,6 +67,10 @@ def clean_transactions(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, Qu
 
     missing_customer_id = int(sales["CustomerID"].isna().sum())
 
+    is_non_product = sales["Description"].astype(str).str.strip().str.lower().isin(NON_PRODUCT_DESCRIPTIONS)
+    non_product_dropped = int(is_non_product.sum())
+    sales = sales[~is_non_product]
+
     valid_price_mask = sales["UnitPrice"] > 0
     valid_qty_mask = sales["Quantity"] > 0
     non_positive_price_dropped = int((~(valid_price_mask & valid_qty_mask)).sum())
@@ -72,6 +84,7 @@ def clean_transactions(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, Qu
         unreadable_rows_dropped=unreadable_rows_dropped,
         cancellations_separated=cancellations_separated,
         missing_customer_id=missing_customer_id,
+        non_product_dropped=non_product_dropped,
         non_positive_price_dropped=non_positive_price_dropped,
         rows_out=len(sales),
     )

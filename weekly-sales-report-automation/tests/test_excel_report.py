@@ -34,6 +34,7 @@ def quality_log():
         unreadable_rows_dropped=1,
         cancellations_separated=3,
         missing_customer_id=1,
+        non_product_dropped=0,
         non_positive_price_dropped=4,
         rows_out=90,
     )

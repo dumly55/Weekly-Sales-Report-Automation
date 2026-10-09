@@ -16,7 +16,7 @@ def raw_df():
         ("C536366", "85123A", "WHITE HANGING HEART", -2, "2011-11-22 09:00:00", 2.55, 17850.0, "United Kingdom"),
         # missing CustomerID -> kept in sales, flagged
         ("536367", "22423", "REGENCY CAKESTAND", 4, "2011-11-23 10:00:00", 12.75, None, "France"),
-        # non-positive price adjustment row -> dropped
+        # postage line (not a product), even at a zero price -> dropped as non-product
         ("536368", "POST", "POSTAGE", 1, "2011-11-23 11:00:00", 0.0, 17850.0, "United Kingdom"),
         # negative quantity, not a cancellation invoice -> dropped
         ("536369", "22423", "REGENCY CAKESTAND", -1, "2011-11-23 12:00:00", 12.75, 17850.0, "United Kingdom"),
@@ -61,10 +61,19 @@ def test_missing_customer_id_is_flagged_but_kept(raw_df):
 
 def test_non_positive_price_or_qty_rows_dropped(raw_df):
     sales, _, quality_log = clean_transactions(raw_df)
-    assert quality_log.non_positive_price_dropped == 2
-    assert "POST" not in sales["StockCode"].values
+    assert quality_log.non_positive_price_dropped == 1
     assert (sales["Quantity"] > 0).all()
     assert (sales["UnitPrice"] > 0).all()
+
+
+def test_non_product_lines_are_dropped_and_counted(raw_df):
+    paid_postage = pd.DataFrame(
+        [("536370", "DOT", " DOTCOM POSTAGE ", 1, "2011-11-24 10:00:00", 950.0, 17850.0, "United Kingdom")],
+        columns=raw_df.columns,
+    )
+    sales, _, quality_log = clean_transactions(pd.concat([raw_df, paid_postage], ignore_index=True))
+    assert quality_log.non_product_dropped == 2
+    assert not sales["StockCode"].isin(["POST", "DOT"]).any()
 
 
 def test_line_total_is_computed(raw_df):

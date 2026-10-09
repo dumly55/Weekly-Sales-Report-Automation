@@ -26,7 +26,7 @@ The script downloads and caches this automatically on first run — no manual do
 Because the dataset is historical, the pipeline is driven by `--as-of-date` to simulate "this week's export just arrived." It filters to the Mon–Sun ISO week containing that date, as if it had been triggered by a Monday-morning scheduled job.
 
 1. **Download** the raw export (cached after first run, with a progress bar on first download).
-2. **Clean & validate**: drops exact duplicates, separates cancellations into a returns view instead of just deleting them, flags rows with missing customer IDs, and drops non-product adjustment rows — logging exactly how many rows were affected by each step.
+2. **Clean & validate**: drops exact duplicates, separates cancellations into a returns view instead of just deleting them, flags rows with missing customer IDs, and drops non-product lines (postage, carriage, bank charges, fees) and rows with a zero or negative price — logging exactly how many rows were affected by each step.
 3. **Compute KPIs**: revenue, units sold, orders, unique customers — for the target week *and* the prior week, with week-over-week % change. Also: top 10 products by revenue, revenue by country, and cancellation totals.
 4. **Generate a formatted Excel workbook** with five sheets: `Summary` (KPI table, key findings, and daily revenue trend chart), `Top Products` (table + chart), `By Country` (table + chart), `Organized Data` (your cleaned rows with clear column names, sorted by date; for data over 100,000 rows, just the two weeks compared), and `Data Quality Log` (what got cleaned and why — an audit trail). Each sheet has a frozen header row, autofilter, zebra-striped rows, color-coded tabs, and green/red week-over-week % changes.
 5. **Write key findings** in plain English, from fixed rules (no AI), so the same data always gives the same text. They cover:
@@ -99,10 +99,10 @@ Output: `output/weekly_report_2011-11-28.xlsx` (earlier reports are never overwr
 ┌──────────────────┬─────────────┬─────────────┬──────────────┐
 │ Metric           │   This Week │   Last Week │ WoW % Change │
 ├──────────────────┼─────────────┼─────────────┼──────────────┤
-│ Revenue          │ £323,398.70 │ £315,114.06 │        +2.6% │
-│ Units Sold       │     156,489 │     156,628 │        -0.1% │
-│ Orders           │         665 │         619 │        +7.4% │
-│ Unique Customers │         516 │         492 │        +4.9% │
+│ Revenue          │ £309,381.73 │ £302,392.22 │        +2.3% │
+│ Units Sold       │     156,350 │     154,803 │        +1.0% │
+│ Orders           │         663 │         616 │        +7.6% │
+│ Unique Customers │         514 │         492 │        +4.5% │
 └──────────────────┴─────────────┴─────────────┴──────────────┘
 Report written to output/weekly_report_2011-11-28.xlsx
 ```
