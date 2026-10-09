@@ -1,4 +1,4 @@
-"""Desktop GUI: generate the weekly sales report without touching a terminal.
+"""Desktop GUI: generate the reports without touching a terminal, one tab per report.
 
 Launch via the run_gui.bat / run_gui.pyw files at the project root. This module
 is intentionally never imported by anything else in `src/` or by the tests --
@@ -19,15 +19,17 @@ from tkcalendar import DateEntry
 from .main import describe_error, run_pipeline, setup_logging
 from .report import format_wow
 
-WINDOW_TITLE = "Weekly Sales Report Generator"
+WINDOW_TITLE = "Report Generator"
 
 
 class ReportApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title(WINDOW_TITLE)
-        self.root.geometry("640x780")
-        self.root.minsize(580, 640)
+        # Keep the window on screen when Windows display scaling shrinks the usable height.
+        height = min(800, self.root.winfo_screenheight() - 80)
+        self.root.geometry(f"660x{height}")
+        self.root.minsize(600, min(640, height))
 
         style = ttk.Style()
         for theme in ("vista", "clam"):
@@ -37,20 +39,25 @@ class ReportApp:
         style.configure("Good.TLabel", foreground="#1f7a1f")
         style.configure("Bad.TLabel", foreground="#c00000")
 
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill="both", expand=True)
+        self.tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab, text="Sales Report")
+
         self._work_queue: queue.Queue = queue.Queue()
         self._build_widgets()
 
     def _build_widgets(self) -> None:
         pad = {"padx": 16, "pady": 8}
 
-        ttk.Label(self.root, text="Weekly Sales Report", font=("Segoe UI", 16, "bold")).pack(anchor="w", **pad)
+        ttk.Label(self.tab, text="Weekly Sales Report", font=("Segoe UI", 16, "bold")).pack(anchor="w", **pad)
         ttk.Label(
-            self.root,
+            self.tab,
             text="Generates a formatted Excel sales report for one week. No terminal needed.",
             wraplength=560,
         ).pack(anchor="w", padx=16)
 
-        source_frame = ttk.LabelFrame(self.root, text="Data source (optional)")
+        source_frame = ttk.LabelFrame(self.tab, text="Data source (optional)")
         source_frame.pack(fill="x", **pad)
         source_row = ttk.Frame(source_frame)
         source_row.pack(fill="x", padx=10, pady=(8, 2))
@@ -66,7 +73,7 @@ class ReportApp:
             foreground="#666666",
         ).pack(anchor="w", padx=10, pady=(0, 8))
 
-        week_frame = ttk.LabelFrame(self.root, text="Report week")
+        week_frame = ttk.LabelFrame(self.tab, text="Report week")
         week_frame.pack(fill="x", **pad)
         self.use_latest_var = tk.BooleanVar(value=True)
         ttk.Radiobutton(
@@ -81,14 +88,14 @@ class ReportApp:
         self.date_picker.pack(side="left", padx=8)
         self._sync_date_picker()
 
-        self.generate_btn = ttk.Button(self.root, text="Generate Report", command=self._on_generate)
+        self.generate_btn = ttk.Button(self.tab, text="Generate Report", command=self._on_generate)
         self.generate_btn.pack(pady=(4, 4))
 
-        self.progress = ttk.Progressbar(self.root, mode="indeterminate")
+        self.progress = ttk.Progressbar(self.tab, mode="indeterminate")
         self.status_var = tk.StringVar(value="Ready.")
-        ttk.Label(self.root, textvariable=self.status_var).pack(pady=(4, 4))
+        ttk.Label(self.tab, textvariable=self.status_var).pack(pady=(4, 4))
 
-        self.results_frame = ttk.Frame(self.root)
+        self.results_frame = ttk.Frame(self.tab)
         self.results_frame.pack(fill="both", expand=True, padx=16, pady=(4, 16))
 
     def _sync_date_picker(self) -> None:
