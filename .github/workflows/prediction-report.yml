@@ -1,0 +1,57 @@
+name: Prediction Report
+
+on:
+  schedule:
+    - cron: "30 6 * * 1" # Every Monday at 06:30 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: weekly-sales-report-automation
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: weekly-sales-report-automation/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Repository variables: PREDICTIONS_URL and ACTUALS_URL (required), TITLE_MAP (optional).
+      - name: Score predictions against actual results
+        env:
+          PREDICTIONS_URL: ${{ vars.PREDICTIONS_URL }}
+          ACTUALS_URL: ${{ vars.ACTUALS_URL }}
+          TITLE_MAP: ${{ vars.TITLE_MAP }}
+        run: |
+          if [ -z "$PREDICTIONS_URL" ] || [ -z "$ACTUALS_URL" ]; then
+            echo "Skipped: set the PREDICTIONS_URL and ACTUALS_URL repository variables to enable this report." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          args=(--predictions "$PREDICTIONS_URL" --actuals "$ACTUALS_URL" --markdown-summary "$GITHUB_STEP_SUMMARY")
+          if [ -n "$TITLE_MAP" ]; then args+=(--title-map "$TITLE_MAP"); fi
+          python -m src.prediction_report "${args[@]}"
+
+      - name: Upload report, Tableau CSV and log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prediction-report
+          path: |
+            weekly-sales-report-automation/output/prediction_accuracy_*
+            weekly-sales-report-automation/logs/predictions_*.log
+          if-no-files-found: ignore
+          retention-days: 90

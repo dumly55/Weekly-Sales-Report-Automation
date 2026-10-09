@@ -127,6 +127,8 @@ The output is `output/prediction_accuracy_<date>.xlsx`, with four sheets:
 - **Upcoming:** matched movies still waiting on an actual result.
 - **Unmatched:** titles found in only one sheet, so nothing is silently dropped.
 
+**Runs weekly on its own:** the **Prediction Report** workflow ([`prediction-report.yml`](../.github/workflows/prediction-report.yml)) runs every Monday at 06:30 UTC, or on demand with **Run workflow**. It re-reads both sheets, so newly filled-in actuals are scored automatically, posts the scorecard and findings on the run page, and attaches the Excel report and CSV. Set it up under **Settings → Secrets and variables → Actions → Variables** with `PREDICTIONS_URL` and `ACTUALS_URL` (both sheets shared as "Anyone with the link can view"), plus an optional `TITLE_MAP`.
+
 A **Tableau-ready CSV** is written next to it (`prediction_accuracy_<date>.csv`). It's in long, tidy format, one row per movie per forecaster, with the forecast, actual, error, % error, direction (too high/too low) and status (released/upcoming), ready to connect to Tableau without reshaping.
 
 ## Tests
