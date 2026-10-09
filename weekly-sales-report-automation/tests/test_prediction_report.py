@@ -183,6 +183,17 @@ def test_tableau_rows_are_one_per_movie_per_forecaster():
     assert pd.isna(delta["pct_error"]) and delta["direction"] == ""
 
 
+def test_no_matching_titles_still_builds_the_report(tmp_path):
+    predictions = pd.DataFrame({"title": ["Alpha"], "predicted": [100.0]})
+    actuals = pd.DataFrame(
+        {"title": ["Zulu"], "actual": [50.0], "projection": [None], "release_date": [pd.NaT], "status_text": [COMPLETE]}
+    )
+    result = compare(predictions, actuals)
+    assert tableau_rows(result).empty
+    build_prediction_workbook(result, prediction_findings(result), tmp_path / "report.xlsx", AS_OF)
+    assert result.unmatched_predictions == ["Alpha"] and result.unmatched_actuals == ["Zulu"]
+
+
 def test_run_end_to_end_with_local_files(tmp_path, monkeypatch):
     monkeypatch.setattr("src.prediction_report.OUTPUT_DIR", tmp_path)
     (tmp_path / "predictions.csv").write_text(

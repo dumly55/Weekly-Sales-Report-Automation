@@ -221,6 +221,8 @@ def compare(
         )
     columns = ["title", "release_date", "predicted", "projection", "actual", "status_text"]
     movies = pd.DataFrame(rows, columns=columns)
+    # With no matches the column would have no date type, and later date formatting would crash.
+    movies["release_date"] = pd.to_datetime(movies["release_date"])
     has_result = movies["actual"].notna() & (movies["actual"] > 0)
     statuses = [classify_run(text, result) for text, result in zip(movies["status_text"], has_result, strict=True)]
     movies["run_status"] = [status for status, _ in statuses]
