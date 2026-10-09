@@ -70,12 +70,17 @@ def _status_overview(movies: pd.DataFrame) -> str:
     return sentence + (f". Not scored yet: {_join(waiting)}." if waiting else ".")
 
 
+def _in_theaters(movies: pd.DataFrame) -> pd.DataFrame:
+    """Movies still in theaters with the % of their prediction reached so far, furthest along first."""
+    showing = movies[movies["run_status"] == IN_THEATERS]
+    showing = showing.assign(reached=showing["actual"] / showing["predicted"] * 100)
+    return showing.sort_values("reached", ascending=False, na_position="last")
+
+
 def _in_theaters_findings(movies: pd.DataFrame) -> list[str]:
-    showing = movies[movies["run_status"] == IN_THEATERS].copy()
+    showing = _in_theaters(movies)
     if showing.empty:
         return []
-    showing["reached"] = showing["actual"] / showing["predicted"] * 100
-    showing = showing.sort_values("reached", ascending=False, na_position="last")
 
     def describe(row) -> str:
         if pd.isna(row["actual"]):
@@ -243,10 +248,8 @@ def _not_scored_rows(movies: pd.DataFrame) -> list[ScorecardRow]:
     total = len(movies)
     rows = []
 
-    showing = movies[movies["run_status"] == IN_THEATERS].copy()
+    showing = _in_theaters(movies)
     if not showing.empty:
-        showing["reached"] = showing["actual"] / showing["predicted"] * 100
-        showing = showing.sort_values("reached", ascending=False, na_position="last")
         labels = [
             f"{r.title} (no gross yet, {_days_text(r.run_days)})"
             if pd.isna(r.actual)
