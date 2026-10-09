@@ -29,7 +29,7 @@ from .excel_report import (
     _write_header_row,
     _write_title,
 )
-from .history import HISTORY_DB, connect, fill_from_history, save_actuals
+from .history import HISTORY_DB, fill_from_history, open_history, save_actuals, save_scores, write_history
 from .main import OUTPUT_DIR, describe_error, next_free_path, setup_logging
 from .predictions import (
     Comparison,
@@ -447,24 +447,29 @@ def run(
     history_path: Path = HISTORY_DB,
     save_history: bool = False,
 ) -> tuple[Comparison, list[str], Path]:
-    """Scores the predictions and writes the report. Blank actuals are filled from the results
-    history if it exists; `save_history` also records this run's actuals in it."""
+    """Scores the predictions and writes the report. This run's actuals and scores are added to an
+    in-memory copy of the results history (blank actuals are filled from it); `save_history`
+    writes that copy back to the history file."""
+    log = logging.getLogger(__name__)
     actuals = load_actuals(actuals_source)
-    restored: list[str] = []
-    if save_history or history_path.exists():
-        with closing(connect(history_path)) as conn:
-            if save_history:
-                saved = save_actuals(actuals, conn, as_of)
-                logging.getLogger(__name__).info("Saved %d actual results to %s", saved, history_path)
-            actuals, restored = fill_from_history(actuals, conn)
+    predictions = read_predictions(load_source(predictions_source))
 
-    result = compare(read_predictions(load_source(predictions_source)), actuals, title_map)
-    result.restored_from_history = [t for t in restored if t in set(result.movies["title"])]
+    with closing(open_history(history_path)) as conn:
+        save_actuals(actuals, conn, as_of)
+        actuals, restored = fill_from_history(actuals, conn)
+        result = compare(predictions, actuals, title_map)
+        result.restored_from_history = [t for t in restored if t in set(result.movies["title"])]
+        scores = tableau_rows(result)
+        save_scores(scores, conn, as_of)
+        if save_history:
+            write_history(conn, history_path)
+            log.info("Saved this run's actuals and %d scores to %s", len(scores), history_path)
+
     findings = prediction_findings(result)
     out_path = next_free_path(OUTPUT_DIR / f"prediction_accuracy_{as_of}.xlsx")
     build_prediction_workbook(result, findings, out_path, as_of)
-    tableau_rows(result).to_csv(out_path.with_suffix(".csv"), index=False)
-    logging.getLogger(__name__).info("Prediction report written to %s (+ .csv for Tableau)", out_path)
+    scores.to_csv(out_path.with_suffix(".csv"), index=False)
+    log.info("Prediction report written to %s (+ .csv for Tableau)", out_path)
     return result, findings, out_path
 
 
