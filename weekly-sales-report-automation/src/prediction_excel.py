@@ -63,6 +63,8 @@ def _build_scorecard_sheet(ws, result: Comparison, findings: list[str], as_of: d
 
 def _write_detailed_stats(ws, result: Comparison, start_row: int) -> None:
     rows, headers = detailed_stats_rows(result)
+    if not headers:  # nothing scored yet, so there are no stats to show
+        return
     ws.cell(row=start_row, column=1, value="Detailed stats").font = SECTION_FONT
     table = pd.DataFrame([[label, *values] for label, values, _ in rows], columns=["Metric", *headers])
     header_row = start_row + 1

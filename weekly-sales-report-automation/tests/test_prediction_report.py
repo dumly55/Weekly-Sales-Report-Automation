@@ -158,7 +158,9 @@ class TestWorkbook:
         result = _result(with_results=False)
         out_path = tmp_path / "accuracy.xlsx"
         build_prediction_workbook(result, prediction_findings(result), out_path, AS_OF)
-        assert load_workbook(out_path)["Scorecard"]["A4"].value == "Still in theaters (not scored yet)"
+        ws = load_workbook(out_path)["Scorecard"]
+        assert ws["A4"].value == "Still in theaters (not scored yet)"
+        assert "Detailed stats" not in [cell.value for cell in ws["A"]]
 
 
 def test_tableau_rows_are_one_per_movie_per_forecaster():
