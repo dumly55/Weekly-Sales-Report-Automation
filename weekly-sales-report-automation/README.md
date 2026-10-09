@@ -131,6 +131,18 @@ The output is `output/prediction_accuracy_<date>.xlsx`, with four sheets:
 
 **Results history (SQLite):** the results sheet pulls actuals live from a website, so some cells come back blank on one download and filled on the next. Each run downloads it 3 times and keeps any value seen. The scheduled run also records every actual result in `data/prediction_history.sqlite` (table `actual_results`: title, latest actual, first and last date seen) and every run's scores (table `movie_scores`: one row per movie per forecaster per run, with forecast, actual, % error and accuracy band). If a movie's result is blank in the sheet later, the last known one is used, and the findings say which movies that happened for. Local runs and the app read this history but never write to it, so a local copy can't conflict with the repo's.
 
+**SQL analysis:** the [`sql/`](sql/) folder holds the analysis queries run against that history. Each file starts with the question it answers and the SQL concepts it uses:
+
+| Query | Question | SQL concepts |
+|---|---|---|
+| `01_accuracy_by_forecaster` | How accurate is each forecaster? | `WITH`, subquery, `GROUP BY`, `SUM(CASE WHEN ...)` |
+| `02_median_miss` | What's each forecaster's typical (median) miss? | window functions `ROW_NUMBER()`, `COUNT() OVER`, `PARTITION BY` |
+| `03_accuracy_bands` | How many movies landed in each accuracy band, and which? | `GROUP BY` two columns, `GROUP_CONCAT`, custom `ORDER BY CASE` |
+| `04_head_to_head` | Movie by movie, which forecaster came closer? | self `JOIN`, `CASE WHEN` |
+| `05_accuracy_by_release_month` | Were predictions better in some months? | `strftime` dates, `GROUP BY` an expression |
+| `06_biggest_misses` | Each forecaster's 5 biggest misses | `RANK() OVER`, filtering a window result |
+| `07_accuracy_over_time` | How has accuracy changed run to run? | `LAG() OVER` across saved runs |
+
 A **Tableau-ready CSV** is written next to it (`prediction_accuracy_<date>.csv`). It's in long, tidy format, one row per movie per forecaster, with the forecast, actual, error, % error, direction (too high/too low) and status (released/upcoming), ready to connect to Tableau without reshaping.
 
 ## Tests
@@ -139,7 +151,7 @@ A **Tableau-ready CSV** is written next to it (`prediction_accuracy_<date>.csv`)
 pytest
 ```
 
-139 tests covering the results history (`test_history.py`), the prediction scoring and its report (`test_predictions.py`, `test_prediction_report.py`), the findings rules (`test_findings.py`), the cleaning rules and messy-value parsing (`test_clean.py`), column recognition for differently shaped sheets (`test_normalize.py`), KPI/week-boundary math and summary formatting (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
+148 tests covering the SQL queries (`test_sql_insights.py`, including a check that the SQL median matches the Python one), the results history (`test_history.py`), the prediction scoring and its report (`test_predictions.py`, `test_prediction_report.py`), the findings rules (`test_findings.py`), the cleaning rules and messy-value parsing (`test_clean.py`), column recognition for differently shaped sheets (`test_normalize.py`), KPI/week-boundary math and summary formatting (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
 
 ## Scheduled weekly run
 
