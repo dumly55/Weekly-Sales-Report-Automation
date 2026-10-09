@@ -49,9 +49,9 @@ def parse_column_map(text: str) -> dict[str, str]:
     return column_map
 
 
-def match_columns(columns: list, column_map: dict[str, str] | None = None) -> dict[str, str]:
-    """Returns {field: sheet column}: the user's `column_map` first, then every other field whose
-    column could be recognized by name."""
+def match_columns(columns: list, column_map: dict[str, str] | None = None, fields: dict = FIELDS) -> dict[str, str]:
+    """Returns {field: sheet column}: the user's `column_map` first, then every other field in
+    `fields` whose column could be recognized by name."""
     mapping: dict[str, str] = {}
     for field, column in (column_map or {}).items():
         matches = [c for c in columns if str(c).strip().lower() == column.lower()]
@@ -67,7 +67,7 @@ def match_columns(columns: list, column_map: dict[str, str] | None = None) -> di
         by_simple_name.setdefault(_simplify(column), column)
 
     used = set(mapping.values())
-    for field, (_, aliases) in FIELDS.items():
+    for field, (_, aliases) in fields.items():
         if field in mapping:
             continue
         for alias in aliases:
@@ -80,31 +80,51 @@ def match_columns(columns: list, column_map: dict[str, str] | None = None) -> di
 
 
 HEADER_SEARCH_ROWS = 10
+# Each group needs at least one of its fields: a date, plus a unit price or a line total.
+SALES_REQUIRED: list[tuple[str, ...]] = [("date",), ("unit_price", "line_total")]
 
 
-def _match_if_usable(columns: list, column_map: dict[str, str] | None) -> dict[str, str] | None:
+def _dedupe(names: list[str]) -> list[str]:
+    """Makes repeated header names unique the way pandas does: "Total", "Total.1", ..."""
+    seen: Counter[str] = Counter()
+    unique = []
+    for name in names:
+        unique.append(f"{name}.{seen[name]}" if seen[name] else name)
+        seen[name] += 1
+    return unique
+
+
+def _match_if_usable(
+    columns: list, column_map: dict[str, str] | None, fields: dict, required: list[tuple[str, ...]]
+) -> dict[str, str] | None:
     try:
-        mapping = match_columns(columns, column_map)
+        mapping = match_columns(columns, column_map, fields)
     except ValueError:
         return None
-    has_required = "date" in mapping and ("unit_price" in mapping or "line_total" in mapping)
-    return mapping if has_required else None
+    return mapping if all(any(f in mapping for f in group) for group in required) else None
 
 
-def _find_header(df: pd.DataFrame, column_map: dict[str, str] | None) -> tuple[pd.DataFrame, dict[str, str]]:
-    mapping = _match_if_usable(list(df.columns), column_map)
+def find_header(
+    df: pd.DataFrame,
+    fields: dict = FIELDS,
+    required: list[tuple[str, ...]] = SALES_REQUIRED,
+    column_map: dict[str, str] | None = None,
+) -> tuple[pd.DataFrame, dict[str, str]]:
+    """Returns (df with its real header row applied, {field: column}). If the first row isn't the
+    header (e.g. a title block sits above it), the next few rows are searched for one that is."""
+    mapping = _match_if_usable(list(df.columns), column_map, fields, required)
     if mapping is not None:
         return df, mapping
 
     for i in range(min(HEADER_SEARCH_ROWS, len(df))):
-        header = [str(v).strip() if pd.notna(v) else f"Unnamed {n}" for n, v in enumerate(df.iloc[i])]
-        mapping = _match_if_usable(header, column_map)
+        header = _dedupe([str(v).strip() if pd.notna(v) else f"Unnamed {n}" for n, v in enumerate(df.iloc[i])])
+        mapping = _match_if_usable(header, column_map, fields, required)
         if mapping is not None:
             logger.info("Skipped title/note rows above the real header row: %s", header)
             return df.iloc[i + 1 :].set_axis(header, axis=1).reset_index(drop=True), mapping
 
     # No usable header anywhere: match the original columns again so the caller reports what's missing.
-    return df, match_columns(list(df.columns), column_map)
+    return df, match_columns(list(df.columns), column_map, fields)
 
 
 def standardize(df: pd.DataFrame, column_map: dict[str, str] | None = None) -> tuple[pd.DataFrame, dict[str, str]]:
@@ -117,7 +137,7 @@ def standardize(df: pd.DataFrame, column_map: dict[str, str] | None = None) -> t
     rows are searched for one that is.
     """
     df = df.dropna(how="all")
-    df, mapping = _find_header(df, column_map)
+    df, mapping = find_header(df, FIELDS, SALES_REQUIRED, column_map)
 
     missing = []
     if "date" not in mapping:
@@ -194,11 +214,30 @@ def to_datetime(series: pd.Series) -> pd.Series:
     """
     if pd.api.types.is_datetime64_any_dtype(series):
         return series
+    dayfirst = _looks_day_first(series)
     with warnings.catch_warnings():
         # pandas warns when it can't infer a single format; mixed formats are expected here.
         warnings.simplefilter("ignore", UserWarning)
-        parsed = pd.to_datetime(series, errors="coerce")
+        parsed = pd.to_datetime(series, errors="coerce", dayfirst=dayfirst)
         unparsed = parsed.isna() & series.notna()
         if unparsed.any():
-            parsed[unparsed] = pd.to_datetime(series[unparsed], errors="coerce", format="mixed")
+            parsed[unparsed] = pd.to_datetime(series[unparsed], errors="coerce", format="mixed", dayfirst=dayfirst)
     return parsed
+
+
+_SLASH_DATE = re.compile(r"^\s*(\d{1,2})[/.-](\d{1,2})[/.-]\d{2,4}")
+
+
+def _looks_day_first(series: pd.Series) -> bool:
+    """True when some date like "15/01/2026" can only be day-first and none can only be month-first.
+
+    Without such evidence (e.g. every value is like "03/04/2026"), dates are read month-first.
+    """
+    day_first = month_first = False
+    for value in series.dropna().astype(str):
+        match = _SLASH_DATE.match(value)
+        if match:
+            first, second = int(match.group(1)), int(match.group(2))
+            day_first |= first > 12
+            month_first |= second > 12
+    return day_first and not month_first

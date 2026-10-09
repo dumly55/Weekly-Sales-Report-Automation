@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 
 from src.clean import clean_transactions
-from src.normalize import to_number
+from src.normalize import to_datetime, to_number
 
 
 @pytest.fixture
@@ -116,6 +116,16 @@ def test_unreadable_rows_are_dropped_and_counted():
 
     assert quality_log.unreadable_rows_dropped == 2
     assert list(sales["InvoiceNo"]) == ["1"]
+
+
+def test_day_first_dates_are_detected():
+    parsed = to_datetime(pd.Series(["15/01/2026", "05/02/2026"]))
+    assert [d.date().isoformat() for d in parsed] == ["2026-01-15", "2026-02-05"]
+
+
+def test_ambiguous_dates_stay_month_first():
+    parsed = to_datetime(pd.Series(["01/15/2026", "05/02/2026"]))
+    assert [d.date().isoformat() for d in parsed] == ["2026-01-15", "2026-05-02"]
 
 
 def test_accounting_negative_is_parsed_as_negative():

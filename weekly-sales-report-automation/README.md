@@ -69,7 +69,7 @@ Your sheet doesn't need to match the demo dataset's layout. Columns are recogniz
 Messy layouts are handled too:
 - Title or note rows above the real header row are skipped (the first 10 rows are searched for the header).
 - Blank rows are ignored.
-- Amounts stored as text, like `$1,200.00` or `(15.00)`, are read as numbers, and dates can be in mixed formats.
+- Amounts stored as text, like `$1,200.00` or `(15.00)`, are read as numbers, and dates can be in mixed formats. Day-first dates like `15/01/2026` are recognized; ambiguous ones like `03/04/2026` are read month-first (March 4).
 - Rows whose date, quantity or price can't be read, such as a "Grand Total" row, are dropped and counted in the report's Data Quality Log sheet.
 
 **When a column isn't recognized** (or the wrong one is picked), add a column map naming your sheet's columns, using the field names from the table above:
@@ -115,7 +115,7 @@ If a date has no matching transactions, or if the download/input data fails, the
 pytest
 ```
 
-99 tests covering the findings rules (`test_findings.py`), the cleaning rules and messy-value parsing (`test_clean.py`), column recognition for differently shaped sheets (`test_normalize.py`), KPI/week-boundary math and summary formatting (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
+102 tests covering the findings rules (`test_findings.py`), the cleaning rules and messy-value parsing (`test_clean.py`), column recognition for differently shaped sheets (`test_normalize.py`), KPI/week-boundary math and summary formatting (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
 
 ## Scheduled weekly run
 

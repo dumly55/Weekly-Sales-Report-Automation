@@ -153,6 +153,14 @@ class TestStandardize:
         assert quality_log.rows_in == 2
         assert quality_log.unreadable_rows_dropped == 0
 
+    def test_repeated_header_names_below_a_title_are_made_unique(self):
+        sheet = pd.DataFrame(
+            [["Date", "Total", "Total"], ["2024-01-15", "$5.00", "$9.00"]], columns=["My Sales", "Unnamed: 1", "Unnamed: 2"]
+        )
+        out, mapping = standardize(sheet)
+        assert mapping["line_total"] == "Total"
+        assert out.loc[0, "UnitPrice"] == pytest.approx(5.0)
+
     def test_missing_required_columns_raises_friendly_error(self):
         sheet = pd.DataFrame({"Foo": [1], "Bar": [2]})
         with pytest.raises(ValueError, match=r"Couldn't find a column for: date, unit_price \(or line_total\)\. The sheet's columns are: Foo, Bar"):
