@@ -63,7 +63,7 @@ def _build_summary_sheet(ws: Worksheet, data: WeeklyReportData) -> None:
     kpi_df = pd.DataFrame([row[:4] for row in kpi_rows], columns=["Metric", "This Week", "Last Week", "WoW % Change"])
 
     header_row = 3
-    last_row = write_dataframe(ws, kpi_df, header_row, zebra=True)
+    last_row = write_dataframe(ws, kpi_df, header_row)
 
     # WoW values come from `kpi_rows` directly (not re-read from the cell) because pandas
     # coerces a mixed [float, None] column to float64 with NaN in place of None, and NaN

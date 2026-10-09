@@ -325,7 +325,7 @@ def detailed_stats_rows(result: Comparison) -> tuple[list[tuple[str, list, str]]
         row("Total actual", "total_actual", "money"),
         row("Total difference", "total_pct", "pct"),
     ]
-    return [(label, values, kind) for label, values, kind in rows], [FORECASTS[f] for f in stats]
+    return rows, [FORECASTS[f] for f in stats]
 
 
 def format_value(value: float, kind: str) -> str:
