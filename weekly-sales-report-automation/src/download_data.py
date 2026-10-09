@@ -6,8 +6,8 @@ local file the user picked from disk.
 import io
 import logging
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import pandas as pd
 import requests

@@ -62,14 +62,18 @@ class TestFetchRemoteDataset:
         assert called_url == "https://docs.google.com/spreadsheets/d/ABC123/export?format=csv&gid=0"
 
     def test_unparseable_content_raises_friendly_error(self):
-        with patch("src.download_data.requests.get", return_value=_mock_response(b"not a spreadsheet", "text/html")):
-            with pytest.raises(ValueError, match="Couldn't read that link"):
-                fetch_remote_dataset("https://example.com/not-a-file")
+        with (
+            patch("src.download_data.requests.get", return_value=_mock_response(b"not a spreadsheet", "text/html")),
+            pytest.raises(ValueError, match="Couldn't read that link"),
+        ):
+            fetch_remote_dataset("https://example.com/not-a-file")
 
     def test_network_failure_raises_friendly_error(self):
-        with patch("src.download_data.requests.get", side_effect=requests.exceptions.ConnectionError("boom")):
-            with pytest.raises(requests.exceptions.RequestException, match="Couldn't download from that link"):
-                fetch_remote_dataset("https://example.com/data.csv")
+        with (
+            patch("src.download_data.requests.get", side_effect=requests.exceptions.ConnectionError("boom")),
+            pytest.raises(requests.exceptions.RequestException, match="Couldn't download from that link"),
+        ):
+            fetch_remote_dataset("https://example.com/data.csv")
 
     def test_calls_status_callback(self):
         csv_bytes = (RAW_COLUMNS + "\n536365,85123A,Widget,6,2011-11-22 08:26:00,2.55,17850.0,United Kingdom\n").encode()

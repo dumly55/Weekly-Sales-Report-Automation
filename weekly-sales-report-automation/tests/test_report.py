@@ -135,7 +135,7 @@ class TestDailyRevenue:
         current_week = sales_df[sales_df["InvoiceNo"].isin(["600001", "600002", "600003"])]
         result = daily_revenue(current_week, start, end)
         assert len(result) == 7
-        by_date = dict(zip(result["Date"], result["Revenue"]))
+        by_date = dict(zip(result["Date"], result["Revenue"], strict=True))
         assert by_date[date(2011, 11, 21)] == pytest.approx(100.0)
         assert by_date[date(2011, 11, 23)] == pytest.approx(50.0)
         assert by_date[date(2011, 11, 25)] == pytest.approx(30.0)

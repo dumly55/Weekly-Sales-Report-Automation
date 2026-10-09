@@ -39,8 +39,6 @@ class ReportApp:
             if theme in style.theme_names():
                 style.theme_use(theme)
                 break
-        style.configure("Good.TLabel", foreground="#1f7a1f")
-        style.configure("Bad.TLabel", foreground="#c00000")
 
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill="both", expand=True)

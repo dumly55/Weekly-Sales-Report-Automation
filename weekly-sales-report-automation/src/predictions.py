@@ -199,7 +199,6 @@ class Comparison:
     movies: pd.DataFrame  # one row per matched movie
     unmatched_predictions: list[str]
     unmatched_actuals: list[str]
-    has_projection: bool
     restored_from_history: list[str] = field(default_factory=list)  # blank in the sheet, last known result used
 
 
@@ -223,7 +222,7 @@ def compare(
     columns = ["title", "release_date", "predicted", "projection", "actual", "status_text"]
     movies = pd.DataFrame(rows, columns=columns)
     has_result = movies["actual"].notna() & (movies["actual"] > 0)
-    statuses = [classify_run(text, result) for text, result in zip(movies["status_text"], has_result)]
+    statuses = [classify_run(text, result) for text, result in zip(movies["status_text"], has_result, strict=True)]
     movies["run_status"] = [status for status, _ in statuses]
     movies["run_days"] = pd.array([days for _, days in statuses], dtype="Int64")
     movies["scored"] = movies["run_status"] == FINAL
@@ -237,7 +236,6 @@ def compare(
         movies=movies,
         unmatched_predictions=[t for i, t in enumerate(predictions["title"]) if i not in matches],
         unmatched_actuals=[t for i, t in enumerate(actuals["title"]) if i not in matched_actuals],
-        has_projection=bool(actuals["projection"].notna().any()),
     )
 
 

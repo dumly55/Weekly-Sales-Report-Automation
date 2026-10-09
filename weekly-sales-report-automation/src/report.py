@@ -45,7 +45,7 @@ def pct_change(current: float, previous: float) -> float | None:
 
 
 def top_products(sales_week: pd.DataFrame, n: int = 10) -> pd.DataFrame:
-    grouped = (
+    return (
         sales_week.groupby(["StockCode", "Description"], dropna=False)
         .agg(Revenue=("LineTotal", "sum"), UnitsSold=("Quantity", "sum"))
         .reset_index()
@@ -53,18 +53,16 @@ def top_products(sales_week: pd.DataFrame, n: int = 10) -> pd.DataFrame:
         .head(n)
         .reset_index(drop=True)
     )
-    return grouped
 
 
 def revenue_by_country(sales_week: pd.DataFrame) -> pd.DataFrame:
-    grouped = (
+    return (
         sales_week.groupby("Country")
         .agg(Revenue=("LineTotal", "sum"), Orders=("InvoiceNo", "nunique"))
         .reset_index()
         .sort_values("Revenue", ascending=False)
         .reset_index(drop=True)
     )
-    return grouped
 
 
 def daily_revenue(sales_week: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:

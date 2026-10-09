@@ -98,7 +98,7 @@ def save_actuals(actuals: pd.DataFrame, conn: sqlite3.Connection, seen_on: date)
     day = seen_on.isoformat()
     rows = [
         (title_key(title), title, float(actual), day, day)
-        for title, actual in zip(actuals["title"], actuals["actual"])
+        for title, actual in zip(actuals["title"], actuals["actual"], strict=True)
         if pd.notna(actual) and actual > 0
     ]
     conn.executemany(
@@ -116,35 +116,31 @@ def save_actuals(actuals: pd.DataFrame, conn: sqlite3.Connection, seen_on: date)
     return len(rows)
 
 
+SCORE_COLUMNS = [
+    "movie", "release_date", "forecaster", "forecast", "actual", "status", "pct_error", "accuracy_band",
+    "gross_so_far", "days_in_theaters", "days_until_release",
+]
+
+
+def _sql_value(value):
+    """Blank cells become NULL, and pandas/numpy numbers become plain Python numbers SQLite can store."""
+    if pd.isna(value) or value == "":
+        return None
+    return value.item() if hasattr(value, "item") else value
+
+
 def save_scores(scores: pd.DataFrame, conn: sqlite3.Connection, run_date: date) -> int:
-    """Records this run's scores (rows shaped like `prediction_report.tableau_rows`), replacing any
-    earlier run from the same day. Returns how many rows were saved."""
+    """Records this run's scores (rows shaped like `prediction_report.tableau_rows`; missing columns
+    are stored as NULL), replacing any earlier run from the same day. Returns how many rows were saved."""
     day = run_date.isoformat()
-
-    def value(v):
-        return None if pd.isna(v) or v == "" else v
-
-    def optional(row, column: str):
-        value_ = getattr(row, column, None)
-        return None if value_ is None else value(value_)
-
-    def whole(v):
-        return None if v is None else int(v)
-
     rows = [
-        (day, r.movie, value(r.release_date), r.forecaster, float(r.forecast), value(r.actual), r.status,
-         value(r.pct_error), value(r.accuracy_band), optional(r, "gross_so_far"),
-         whole(optional(r, "days_in_theaters")), whole(optional(r, "days_until_release")))
-        for r in scores.itertuples(index=False)
+        (day, *(_sql_value(v) for v in row))
+        for row in scores.reindex(columns=SCORE_COLUMNS).itertuples(index=False)
     ]
     conn.execute("DELETE FROM movie_scores WHERE run_date = ?", (day,))
     conn.executemany(
-        """
-        INSERT OR REPLACE INTO movie_scores
-            (run_date, movie, release_date, forecaster, forecast, actual, status, pct_error, accuracy_band,
-             gross_so_far, days_in_theaters, days_until_release)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+        f"INSERT OR REPLACE INTO movie_scores (run_date, {', '.join(SCORE_COLUMNS)}) "
+        f"VALUES ({', '.join('?' * (len(SCORE_COLUMNS) + 1))})",
         rows,
     )
     conn.commit()

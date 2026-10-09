@@ -275,7 +275,7 @@ def _accuracy_rows(result: Comparison, stats: dict) -> list[ScorecardRow]:
     n = len(scored)
 
     def labels(movies: pd.DataFrame) -> list[str]:
-        return [_movie_label(t, p) for t, p in zip(movies["title"], movies["predicted_pct_error"])]
+        return [_movie_label(t, p) for t, p in zip(movies["title"], movies["predicted_pct_error"], strict=True)]
 
     rows = [
         ScorecardRow("Finished and scored", f"{n} of {len(result.movies)} matched movies"),

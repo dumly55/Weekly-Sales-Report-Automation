@@ -167,7 +167,6 @@ class TestCompare:
         assert pd.isna(movies.loc["Dune Part Three", "predicted_pct_error"])
         assert result.unmatched_predictions == ["MELANIA"]
         assert result.unmatched_actuals == []
-        assert result.has_projection
 
 
 class TestAccuracyStats:
