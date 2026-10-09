@@ -17,6 +17,9 @@ from tkinter import filedialog, messagebox, ttk
 from tkcalendar import DateEntry
 
 from .main import describe_error, run_pipeline, setup_logging
+from .prediction_report import format_value, scorecard_rows
+from .prediction_report import run as run_predictions
+from .predictions import parse_title_map
 from .report import format_wow
 
 WINDOW_TITLE = "Report Generator"
@@ -104,7 +107,7 @@ class ReportApp:
     def _on_browse(self) -> None:
         path = filedialog.askopenfilename(
             title="Select a CSV or Excel file",
-            filetypes=[("Spreadsheets", "*.csv *.xlsx *.xls"), ("All files", "*.*")],
+            filetypes=SPREADSHEET_TYPES,
         )
         if path:
             self.link_var.set(path)
@@ -199,31 +202,181 @@ class ReportApp:
             tree.insert("", "end", values=(metric, this_week, last_week, format_wow(wow)), tags=(tag,))
 
         tree.pack(fill="x", pady=(0, 12))
+        _add_open_buttons(self.results_frame, out_path)
+        _add_findings_box(self.results_frame, report_data.findings)
 
-        button_row = ttk.Frame(self.results_frame)
-        button_row.pack(fill="x")
-        ttk.Button(button_row, text="Open Report", command=lambda: os.startfile(out_path)).pack(side="left")
-        ttk.Button(button_row, text="Open Folder", command=lambda: os.startfile(out_path.parent)).pack(side="left", padx=8)
 
-        if report_data.findings:
-            ttk.Label(self.results_frame, text="Key findings", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(12, 4))
-            findings_frame = ttk.Frame(self.results_frame)
-            findings_frame.pack(fill="both", expand=True)
-            scrollbar = ttk.Scrollbar(findings_frame, orient="vertical")
-            text = tk.Text(
-                findings_frame, wrap="word", height=8, relief="flat", font=("Segoe UI", 10),
-                padx=8, pady=6, yscrollcommand=scrollbar.set,
-            )
-            scrollbar.config(command=text.yview)
-            scrollbar.pack(side="right", fill="y")
-            text.pack(side="left", fill="both", expand=True)
-            text.insert("1.0", "\n\n".join(f"•  {finding}" for finding in report_data.findings))
-            text.config(state="disabled")
+def _add_open_buttons(parent: ttk.Frame, out_path: Path) -> None:
+    button_row = ttk.Frame(parent)
+    button_row.pack(fill="x")
+    ttk.Button(button_row, text="Open Report", command=lambda: os.startfile(out_path)).pack(side="left")
+    ttk.Button(button_row, text="Open Folder", command=lambda: os.startfile(out_path.parent)).pack(side="left", padx=8)
+
+
+def _add_findings_box(parent: ttk.Frame, findings: list[str]) -> None:
+    if not findings:
+        return
+    ttk.Label(parent, text="Key findings", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(12, 4))
+    findings_frame = ttk.Frame(parent)
+    findings_frame.pack(fill="both", expand=True)
+    scrollbar = ttk.Scrollbar(findings_frame, orient="vertical")
+    text = tk.Text(
+        findings_frame, wrap="word", height=8, relief="flat", font=("Segoe UI", 10),
+        padx=8, pady=6, yscrollcommand=scrollbar.set,
+    )
+    scrollbar.config(command=text.yview)
+    scrollbar.pack(side="right", fill="y")
+    text.pack(side="left", fill="both", expand=True)
+    text.insert("1.0", "\n\n".join(f"•  {finding}" for finding in findings))
+    text.config(state="disabled")
+
+
+SPREADSHEET_TYPES = [("Spreadsheets", "*.csv *.xlsx *.xls"), ("All files", "*.*")]
+# The scorecard rows shown in the window; the Excel report has all of them.
+WINDOW_SCORECARD_ROWS = {
+    "Movies scored",
+    "Median error (either direction)",
+    "Median lean (+ = too high)",
+    "Within 25% of actual",
+    "Total difference",
+}
+
+
+class PredictionTab:
+    """Scores a predictions sheet against a sheet of actual results."""
+
+    def __init__(self, root: tk.Tk, notebook: ttk.Notebook) -> None:
+        self.root = root
+        self.tab = ttk.Frame(notebook)
+        notebook.add(self.tab, text="Movie Predictions")
+        self._work_queue: queue.Queue = queue.Queue()
+        self._build_widgets()
+
+    def _build_widgets(self) -> None:
+        pad = {"padx": 16, "pady": 8}
+        ttk.Label(self.tab, text="Predictions vs Actual Results", font=("Segoe UI", 16, "bold")).pack(anchor="w", **pad)
+        ttk.Label(
+            self.tab,
+            text="Scores movie box-office predictions against the actual worldwide results, "
+            "and shows how accurate they were.",
+            wraplength=600,
+        ).pack(anchor="w", padx=16)
+
+        sheets_frame = ttk.LabelFrame(self.tab, text="Sheets")
+        sheets_frame.pack(fill="x", **pad)
+        self.predictions_var = tk.StringVar()
+        self.actuals_var = tk.StringVar()
+        self._source_row(sheets_frame, "Predictions:", self.predictions_var)
+        self._source_row(sheets_frame, "Actual results:", self.actuals_var)
+        ttk.Label(
+            sheets_frame,
+            text='Paste a link (CSV/Excel file, or a Google Sheet shared as "Anyone with the link can view"), '
+            "or click Browse to pick a file from your computer.",
+            wraplength=580,
+            foreground="#666666",
+        ).pack(anchor="w", padx=10, pady=(2, 8))
+
+        titles_frame = ttk.LabelFrame(self.tab, text="Title matches (optional)")
+        titles_frame.pack(fill="x", **pad)
+        self.title_map_var = tk.StringVar()
+        ttk.Entry(titles_frame, textvariable=self.title_map_var).pack(fill="x", padx=10, pady=(8, 2))
+        ttk.Label(
+            titles_frame,
+            text="For movies the two sheets name differently, as Results Title=Predictions Title, "
+            "separated by semicolons. Example: Minions 3=MINIONS AND MONSTERS",
+            wraplength=580,
+            foreground="#666666",
+        ).pack(anchor="w", padx=10, pady=(0, 8))
+
+        self.score_btn = ttk.Button(self.tab, text="Score Predictions", command=self._on_score)
+        self.score_btn.pack(pady=(4, 4))
+        self.progress = ttk.Progressbar(self.tab, mode="indeterminate")
+        self.status_var = tk.StringVar(value="Ready.")
+        ttk.Label(self.tab, textvariable=self.status_var).pack(pady=(4, 4))
+        self.results_frame = ttk.Frame(self.tab)
+        self.results_frame.pack(fill="both", expand=True, padx=16, pady=(4, 16))
+
+    def _source_row(self, parent: ttk.Frame, label: str, variable: tk.StringVar) -> None:
+        row = ttk.Frame(parent)
+        row.pack(fill="x", padx=10, pady=(8, 0))
+        ttk.Label(row, text=label, width=14).pack(side="left")
+        ttk.Entry(row, textvariable=variable).pack(side="left", fill="x", expand=True)
+
+        def browse() -> None:
+            path = filedialog.askopenfilename(title="Select a CSV or Excel file", filetypes=SPREADSHEET_TYPES)
+            if path:
+                variable.set(path)
+
+        ttk.Button(row, text="Browse...", command=browse).pack(side="left", padx=(6, 0))
+
+    def _on_score(self) -> None:
+        predictions, actuals = self.predictions_var.get().strip(), self.actuals_var.get().strip()
+        if not predictions or not actuals:
+            messagebox.showerror("Missing sheet", "Choose both a predictions sheet and an actual-results sheet.")
+            return
+        try:
+            title_map = parse_title_map(self.title_map_var.get())
+        except ValueError as exc:
+            messagebox.showerror("Title matches", str(exc))
+            return
+
+        self.score_btn.config(state="disabled")
+        for widget in self.results_frame.winfo_children():
+            widget.destroy()
+        self.progress.pack(fill="x", padx=16, pady=(0, 4))
+        self.progress.start(12)
+        self.status_var.set("Reading both sheets and scoring the predictions...")
+        threading.Thread(target=self._worker, args=(predictions, actuals, title_map), daemon=True).start()
+        self.root.after(100, self._poll_queue)
+
+    def _worker(self, predictions: str, actuals: str, title_map: list[tuple[str, str]]) -> None:
+        try:
+            today = date.today()
+            setup_logging(today, "predictions")
+            self._work_queue.put(("success", run_predictions(predictions, actuals, today, title_map)))
+        except Exception as exc:
+            self._work_queue.put(("error", describe_error(exc)))
+
+    def _poll_queue(self) -> None:
+        try:
+            kind, payload = self._work_queue.get_nowait()
+        except queue.Empty:
+            self.root.after(100, self._poll_queue)
+            return
+        self.progress.stop()
+        self.progress.pack_forget()
+        self.score_btn.config(state="normal")
+        if kind == "error":
+            self.status_var.set("Something went wrong.")
+            messagebox.showerror("Scoring failed", payload)
+            return
+        result, findings, out_path = payload
+        scored = int(result.movies["released"].sum())
+        self.status_var.set(f"Done. Scored {scored} released movie{'' if scored == 1 else 's'}.")
+        self._show_results(result, findings, out_path)
+
+    def _show_results(self, result, findings: list[str], out_path: Path) -> None:
+        rows, headers = scorecard_rows(result)
+        if headers:
+            rows = [row for row in rows if row[0] in WINDOW_SCORECARD_ROWS]
+            columns = ["metric", *[f"f{i}" for i in range(len(headers))]]
+            tree = ttk.Treeview(self.results_frame, columns=columns, show="headings", height=len(rows))
+            tree.heading("metric", text="Metric")
+            tree.column("metric", anchor="w", width=240)
+            for i, header in enumerate(headers):
+                tree.heading(f"f{i}", text=header)
+                tree.column(f"f{i}", anchor="e", width=150)
+            for label, values, kind in rows:
+                tree.insert("", "end", values=(label, *(format_value(v, kind) for v in values)))
+            tree.pack(fill="x", pady=(0, 12))
+        _add_open_buttons(self.results_frame, out_path)
+        _add_findings_box(self.results_frame, findings)
 
 
 def main() -> None:
     root = tk.Tk()
-    ReportApp(root)
+    app = ReportApp(root)
+    PredictionTab(root, app.notebook)
     root.mainloop()
 
 

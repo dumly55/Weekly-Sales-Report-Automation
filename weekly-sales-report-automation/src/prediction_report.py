@@ -18,7 +18,7 @@ from rich.markup import escape
 from rich.table import Table
 
 from .excel_report import BAD_FONT, GOOD_FONT, _add_table_polish, _write_dataframe, _write_findings, _write_title
-from .main import LOGS_DIR, OUTPUT_DIR, describe_error, next_free_path
+from .main import OUTPUT_DIR, describe_error, next_free_path, setup_logging
 from .predictions import (
     Comparison,
     accuracy_stats,
@@ -129,8 +129,8 @@ def _unmatched_findings(result: Comparison, released: pd.DataFrame) -> list[str]
     return findings
 
 
-def _scorecard_rows(result: Comparison) -> list[tuple[str, list, str]]:
-    """(label, [value per forecast], kind) rows for the scorecard table."""
+def scorecard_rows(result: Comparison) -> tuple[list[tuple[str, list, str]], list[str]]:
+    """Returns ((label, [value per forecast], kind) rows, forecast column headers) for the scorecard."""
     stats = {f: accuracy_stats(result.movies, f) for f in FORECASTS}
     stats = {f: s for f, s in stats.items() if s is not None}
 
@@ -155,7 +155,7 @@ def _scorecard_rows(result: Comparison) -> list[tuple[str, list, str]]:
 
 def _build_scorecard_sheet(ws, result: Comparison, findings: list[str], as_of: date) -> None:
     _write_title(ws, f"Prediction Accuracy as of {as_of}", span_cols=3)
-    rows, headers = _scorecard_rows(result)
+    rows, headers = scorecard_rows(result)
     if not headers:
         ws.cell(row=3, column=1, value="No released movies to score yet.")
         _write_findings(ws, findings, start_row=5)
@@ -294,17 +294,17 @@ def tableau_rows(result: Comparison) -> pd.DataFrame:
 
 
 def summary_markdown(result: Comparison, findings: list[str], as_of: date) -> str:
-    rows, headers = _scorecard_rows(result)
+    rows, headers = scorecard_rows(result)
     lines = [f"## Prediction Accuracy as of {as_of}", ""]
     if headers:
         lines += ["| Metric | " + " | ".join(headers) + " |", "|---|" + "--:|" * len(headers)]
         for label, values, kind in rows:
-            lines.append(f"| {label} | " + " | ".join(_format_value(v, kind) for v in values) + " |")
+            lines.append(f"| {label} | " + " | ".join(format_value(v, kind) for v in values) + " |")
     lines += ["", "### Key findings", ""] + [f"- {finding}" for finding in findings]
     return "\n".join(lines) + "\n"
 
 
-def _format_value(value: float, kind: str) -> str:
+def format_value(value: float, kind: str) -> str:
     if kind == "money":
         return short_money(value)
     if kind == "pct":
@@ -329,14 +329,14 @@ def run(
 
 
 def _print_summary(result: Comparison, findings: list[str], out_path: Path, as_of: date) -> None:
-    rows, headers = _scorecard_rows(result)
+    rows, headers = scorecard_rows(result)
     if headers:
         table = Table(title=f"Prediction Accuracy as of {as_of}", title_style="bold cyan")
         table.add_column("Metric", style="bold")
         for header in headers:
             table.add_column(header, justify="right")
         for label, values, kind in rows:
-            table.add_row(label, *(_format_value(v, kind) for v in values))
+            table.add_row(label, *(format_value(v, kind) for v in values))
         console.print()
         console.print(table)
     console.print("\n[bold cyan]Key findings[/bold cyan]")
@@ -368,12 +368,7 @@ def main() -> None:
     args = parser.parse_args()
 
     as_of = date.today()
-    LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(
-        filename=LOGS_DIR / f"predictions_{as_of}.log",
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+    setup_logging(as_of, "predictions")
     try:
         result, findings, out_path = run(args.predictions, args.actuals, as_of, args.title_map)
         if args.markdown_summary:

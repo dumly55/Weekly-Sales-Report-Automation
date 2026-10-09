@@ -91,7 +91,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def setup_logging(as_of_date: date | None) -> None:
+def setup_logging(as_of_date: date | None, prefix: str = "run") -> None:
     """Logs the full run detail to a file. Console output is handled separately via
     rich (progress bar, summary table, friendly errors), so no console handler here.
 
@@ -101,7 +101,7 @@ def setup_logging(as_of_date: date | None) -> None:
     per run instead of writing everything to whichever date was requested first.
     """
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    log_file = LOGS_DIR / f"run_{as_of_date or 'latest'}.log"
+    log_file = LOGS_DIR / f"{prefix}_{as_of_date or 'latest'}.log"
 
     root_logger = logging.getLogger()
     for handler in root_logger.handlers[:]:
