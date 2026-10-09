@@ -7,6 +7,7 @@ Usage:
 import argparse
 import logging
 import sys
+from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -28,6 +29,7 @@ from .excel_report import (
     _write_header_row,
     _write_title,
 )
+from .history import HISTORY_DB, connect, fill_from_history, save_actuals
 from .main import OUTPUT_DIR, describe_error, next_free_path, setup_logging
 from .predictions import (
     Comparison,
@@ -74,7 +76,7 @@ def prediction_findings(result: Comparison) -> list[str]:
 
     stats = accuracy_stats(movies, "predicted")
     if stats is None:
-        return findings + _unmatched_findings(result, released)
+        return findings + _data_notes(result)
 
     n = stats["scored"]
     typical = f"The predictions were typically off by {stats['median_abs_pct']:.0f}% (median"
@@ -111,11 +113,18 @@ def prediction_findings(result: Comparison) -> list[str]:
             f"Against the tracker's own projections (typically off by {tracker['median_abs_pct']:.0f}%), "
             f"the predictions were closer on {wins} of {len(both)} movies."
         )
-    return findings + _unmatched_findings(result, released)
+    return findings + _data_notes(result)
 
 
-def _unmatched_findings(result: Comparison, released: pd.DataFrame) -> list[str]:
+def _data_notes(result: Comparison) -> list[str]:
+    """Notes about the input data: results restored from history, and titles that couldn't be matched."""
     findings = []
+    restored = result.restored_from_history
+    if restored:
+        findings.append(
+            f"{len(restored)} {'movie' if len(restored) == 1 else 'movies'} had no result in the results sheet "
+            f"this time, so the last known result was used: {', '.join(restored)}."
+        )
     unmatched_actuals, unmatched_predictions = len(result.unmatched_actuals), len(result.unmatched_predictions)
     if unmatched_actuals:
         names = ", ".join(result.unmatched_actuals[:5])
@@ -431,9 +440,26 @@ def format_value(value: float, kind: str) -> str:
 
 
 def run(
-    predictions_source: str, actuals_source: str, as_of: date, title_map: list[tuple[str, str]] | None = None
+    predictions_source: str,
+    actuals_source: str,
+    as_of: date,
+    title_map: list[tuple[str, str]] | None = None,
+    history_path: Path = HISTORY_DB,
+    save_history: bool = False,
 ) -> tuple[Comparison, list[str], Path]:
-    result = compare(read_predictions(load_source(predictions_source)), load_actuals(actuals_source), title_map)
+    """Scores the predictions and writes the report. Blank actuals are filled from the results
+    history if it exists; `save_history` also records this run's actuals in it."""
+    actuals = load_actuals(actuals_source)
+    restored: list[str] = []
+    if save_history or history_path.exists():
+        with closing(connect(history_path)) as conn:
+            if save_history:
+                saved = save_actuals(actuals, conn, as_of)
+                logging.getLogger(__name__).info("Saved %d actual results to %s", saved, history_path)
+            actuals, restored = fill_from_history(actuals, conn)
+
+    result = compare(read_predictions(load_source(predictions_source)), actuals, title_map)
+    result.restored_from_history = [t for t in restored if t in set(result.movies["title"])]
     findings = prediction_findings(result)
     out_path = next_free_path(OUTPUT_DIR / f"prediction_accuracy_{as_of}.xlsx")
     build_prediction_workbook(result, findings, out_path, as_of)
@@ -478,13 +504,20 @@ def main() -> None:
         help='Optional: pair movies listed under different names, e.g. "Minions 3=MINIONS AND MONSTERS; '
         'Jumanji 3=JUMANJI: OPEN WORLD" (results title=predictions title, separated by semicolons).',
     )
+    parser.add_argument(
+        "--save-history",
+        action="store_true",
+        help="Also record this run's actual results in the results history database (used by the scheduled run).",
+    )
     parser.add_argument("--markdown-summary", default=None, help="Optional: append the scorecard and findings as Markdown to this file.")
     args = parser.parse_args()
 
     as_of = date.today()
     setup_logging(as_of, "predictions")
     try:
-        result, findings, out_path = run(args.predictions, args.actuals, as_of, args.title_map)
+        result, findings, out_path = run(
+            args.predictions, args.actuals, as_of, args.title_map, save_history=args.save_history
+        )
         if args.markdown_summary:
             with open(args.markdown_summary, "a", encoding="utf-8") as summary_file:
                 summary_file.write(summary_markdown(result, findings, as_of))

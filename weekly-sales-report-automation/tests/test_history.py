@@ -1,0 +1,63 @@
+from contextlib import closing
+from datetime import date
+
+import pandas as pd
+import pytest
+
+from src.history import connect, fill_from_history, save_actuals
+from src.prediction_report import run
+
+
+def _actuals(rows):
+    return pd.DataFrame(rows, columns=["title", "actual"])
+
+
+class TestHistory:
+    def test_saved_results_fill_later_blanks(self, tmp_path):
+        with closing(connect(tmp_path / "history.sqlite")) as conn:
+            save_actuals(_actuals([("Mercy 👮", 54_709_856.0), ("Primate", None)]), conn, date(2026, 10, 5))
+            filled, restored = fill_from_history(_actuals([("MERCY", None), ("Primate", None), ("Iron Lung", 5.0)]), conn)
+
+        assert list(filled["actual"].fillna(-1)) == [54_709_856.0, -1, 5.0]
+        assert restored == ["MERCY"]
+
+    def test_saving_again_keeps_first_seen_and_updates_the_rest(self, tmp_path):
+        with closing(connect(tmp_path / "history.sqlite")) as conn:
+            save_actuals(_actuals([("Mercy", 50.0)]), conn, date(2026, 10, 5))
+            save_actuals(_actuals([("Mercy", 55.0)]), conn, date(2026, 10, 12))
+            row = conn.execute("SELECT title, actual, first_seen, last_seen FROM actual_results").fetchall()
+
+        assert row == [("Mercy", 55.0, "2026-10-05", "2026-10-12")]
+
+    def test_blank_and_zero_results_are_not_saved(self, tmp_path):
+        with closing(connect(tmp_path / "history.sqlite")) as conn:
+            assert save_actuals(_actuals([("A", None), ("B", 0.0), ("C", 3.0)]), conn, date(2026, 10, 5)) == 1
+
+
+class TestRunWithHistory:
+    @pytest.fixture
+    def sheets(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("src.prediction_report.OUTPUT_DIR", tmp_path / "out")
+        predictions = tmp_path / "predictions.csv"
+        predictions.write_text("MOVIE TITLE,WORLDWIDE TOTAL\nMERCY,$40\nSEND HELP,$60\n", encoding="utf-8")
+        actuals = tmp_path / "actuals.csv"
+        return predictions, actuals
+
+    def test_blank_result_is_restored_and_reported(self, tmp_path, sheets):
+        predictions, actuals = sheets
+        history = tmp_path / "history.sqlite"
+        actuals.write_text("Movie,Worldwide Actual\nMercy,$50\nSend Help,$100\n", encoding="utf-8")
+        run(str(predictions), str(actuals), date(2026, 10, 5), history_path=history, save_history=True)
+
+        actuals.write_text("Movie,Worldwide Actual\nMercy,\nSend Help,$100\n", encoding="utf-8")
+        result, findings, _ = run(str(predictions), str(actuals), date(2026, 10, 12), history_path=history)
+
+        assert result.movies["released"].sum() == 2
+        assert result.restored_from_history == ["Mercy"]
+        assert "1 movie had no result in the results sheet this time, so the last known result was used: Mercy." in findings
+
+    def test_no_history_file_is_created_unless_saving(self, tmp_path, sheets):
+        predictions, actuals = sheets
+        actuals.write_text("Movie,Worldwide Actual\nMercy,$50\n", encoding="utf-8")
+        run(str(predictions), str(actuals), date(2026, 10, 5), history_path=tmp_path / "history.sqlite")
+        assert not (tmp_path / "history.sqlite").exists()

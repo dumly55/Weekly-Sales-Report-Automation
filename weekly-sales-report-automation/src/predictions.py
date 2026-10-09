@@ -8,7 +8,7 @@ forecast is scored against the actual worldwide gross once the movie has one.
 import difflib
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pandas as pd
@@ -169,6 +169,7 @@ class Comparison:
     unmatched_predictions: list[str]
     unmatched_actuals: list[str]
     has_projection: bool
+    restored_from_history: list[str] = field(default_factory=list)  # blank in the sheet, last known result used
 
 
 def compare(
