@@ -6,6 +6,7 @@ from src.predictions import (
     clean_title,
     compare,
     match_titles,
+    parse_title_map,
     read_actuals,
     read_predictions,
     title_key,
@@ -34,6 +35,28 @@ class TestMatchTitles:
 
     def test_each_actual_is_matched_at_most_once(self):
         assert match_titles(["Mercy", "MERCY"], ["Mercy"]) == {0: 0}
+
+    def test_title_map_pairs_differently_named_movies(self):
+        title_map = parse_title_map("Minions 3=MINIONS AND MONSTERS; Jumanji 3 = jumanji: open world")
+        assert match_titles(["JUMANJI: OPEN WORLD", "MINIONS AND MONSTERS"], ["Minions 3", "Jumanji 3"], title_map) == {
+            0: 1,
+            1: 0,
+        }
+
+    def test_title_map_with_unknown_title_raises_friendly_error(self):
+        with pytest.raises(ValueError, match='no movie called "Minions 4" in the results sheet'):
+            match_titles(["MINIONS AND MONSTERS"], ["Minions 3"], [("Minions 4", "MINIONS AND MONSTERS")])
+
+
+class TestParseTitleMap:
+    def test_titles_can_contain_commas(self):
+        assert parse_title_map("Good Luck, Have Fun=GOOD LUCK, HAVE FUN, DON'T DIE\n") == [
+            ("Good Luck, Have Fun", "GOOD LUCK, HAVE FUN, DON'T DIE")
+        ]
+
+    def test_entry_without_equals_raises_friendly_error(self):
+        with pytest.raises(ValueError, match="should look like Results Title=Predictions Title"):
+            parse_title_map("Minions 3")
 
 
 def _actuals_sheet():

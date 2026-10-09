@@ -19,7 +19,15 @@ from rich.table import Table
 
 from .excel_report import BAD_FONT, GOOD_FONT, _add_table_polish, _write_dataframe, _write_findings, _write_title
 from .main import LOGS_DIR, OUTPUT_DIR, describe_error, next_free_path
-from .predictions import Comparison, accuracy_stats, compare, load_source, read_actuals, read_predictions
+from .predictions import (
+    Comparison,
+    accuracy_stats,
+    compare,
+    load_source,
+    parse_title_map,
+    read_actuals,
+    read_predictions,
+)
 
 FORECASTS = {"predicted": "Predictions", "projection": "Tracker Projection"}
 GOOD_ERROR_PCT = 25  # errors within this are shown in green, beyond it in red
@@ -281,8 +289,12 @@ def _format_value(value: float, kind: str) -> str:
     return f"{value:,.0f}"
 
 
-def run(predictions_source: str, actuals_source: str, as_of: date) -> tuple[Comparison, list[str], Path]:
-    result = compare(read_predictions(load_source(predictions_source)), read_actuals(load_source(actuals_source)))
+def run(
+    predictions_source: str, actuals_source: str, as_of: date, title_map: list[tuple[str, str]] | None = None
+) -> tuple[Comparison, list[str], Path]:
+    result = compare(
+        read_predictions(load_source(predictions_source)), read_actuals(load_source(actuals_source)), title_map
+    )
     findings = prediction_findings(result)
     out_path = next_free_path(OUTPUT_DIR / f"prediction_accuracy_{as_of}.xlsx")
     build_prediction_workbook(result, findings, out_path, as_of)
@@ -307,10 +319,24 @@ def _print_summary(result: Comparison, findings: list[str], out_path: Path, as_o
     console.print(f"\n[bold green]Report written[/bold green] to [bold]{out_path}[/bold]\n")
 
 
+def _parse_title_map(value: str) -> list[tuple[str, str]]:
+    try:
+        return parse_title_map(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Score movie box-office predictions against actual results.")
     parser.add_argument("--predictions", required=True, help="Link or file path for the predictions sheet.")
     parser.add_argument("--actuals", required=True, help="Link or file path for the actual-results sheet.")
+    parser.add_argument(
+        "--title-map",
+        default=None,
+        type=_parse_title_map,
+        help='Optional: pair movies listed under different names, e.g. "Minions 3=MINIONS AND MONSTERS; '
+        'Jumanji 3=JUMANJI: OPEN WORLD" (results title=predictions title, separated by semicolons).',
+    )
     parser.add_argument("--markdown-summary", default=None, help="Optional: append the scorecard and findings as Markdown to this file.")
     args = parser.parse_args()
 
@@ -322,7 +348,7 @@ def main() -> None:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
     try:
-        result, findings, out_path = run(args.predictions, args.actuals, as_of)
+        result, findings, out_path = run(args.predictions, args.actuals, as_of, args.title_map)
         if args.markdown_summary:
             with open(args.markdown_summary, "a", encoding="utf-8") as summary_file:
                 summary_file.write(summary_markdown(result, findings, as_of))

@@ -53,16 +53,46 @@ def title_key(title: str) -> str:
     return re.sub(r"[^a-z0-9]", "", title.lower().replace("&", "and"))
 
 
-def match_titles(prediction_titles: list[str], actual_titles: list[str]) -> dict[int, int]:
-    """Returns {prediction index: actual index}, one-to-one. Exact key matches come first; the rest
-    fall back to close spellings (e.g. "Coyote v. Acme" / "Coyote vs. Acme"), but only between titles
-    with the same numbers, so "Toy Story 5" can never match "Toy Story 4"."""
+def parse_title_map(text: str) -> list[tuple[str, str]]:
+    """Parses "Minions 3=MINIONS AND MONSTERS; Jumanji 3=JUMANJI: OPEN WORLD" into
+    (results title, predictions title) pairs. Pairs are split by semicolons or newlines,
+    not commas, since titles can contain commas."""
+    pairs = []
+    for entry in re.split(r"[;\n]", text):
+        if not entry.strip():
+            continue
+        actual, sep, predicted = entry.partition("=")
+        if not sep or not actual.strip() or not predicted.strip():
+            raise ValueError(f'Title map entry "{entry.strip()}" should look like Results Title=Predictions Title.')
+        pairs.append((actual.strip(), predicted.strip()))
+    return pairs
+
+
+def match_titles(
+    prediction_titles: list[str], actual_titles: list[str], title_map: list[tuple[str, str]] | None = None
+) -> dict[int, int]:
+    """Returns {prediction index: actual index}, one-to-one. Pairs from `title_map` (results title,
+    predictions title) come first, then exact key matches; the rest fall back to close spellings
+    (e.g. "Coyote v. Acme" / "Coyote vs. Acme"), but only between titles with the same numbers, so
+    "Toy Story 5" can never match "Toy Story 4"."""
     pred_keys = [title_key(t) for t in prediction_titles]
     actual_keys = [title_key(t) for t in actual_titles]
     matches: dict[int, int] = {}
     taken: set[int] = set()
 
+    for actual_name, predicted_name in title_map or []:
+        a = next((i for i, k in enumerate(actual_keys) if k == title_key(actual_name)), None)
+        p = next((i for i, k in enumerate(pred_keys) if k == title_key(predicted_name)), None)
+        if a is None:
+            raise ValueError(f'Title map: no movie called "{actual_name}" in the results sheet.')
+        if p is None:
+            raise ValueError(f'Title map: no movie called "{predicted_name}" in the predictions sheet.')
+        matches[p] = a
+        taken.add(a)
+
     for p, key in enumerate(pred_keys):
+        if p in matches:
+            continue
         for a, other in enumerate(actual_keys):
             if a not in taken and key and key == other:
                 matches[p] = a
@@ -120,8 +150,10 @@ class Comparison:
     has_projection: bool
 
 
-def compare(predictions: pd.DataFrame, actuals: pd.DataFrame) -> Comparison:
-    matches = match_titles(list(predictions["title"]), list(actuals["title"]))
+def compare(
+    predictions: pd.DataFrame, actuals: pd.DataFrame, title_map: list[tuple[str, str]] | None = None
+) -> Comparison:
+    matches = match_titles(list(predictions["title"]), list(actuals["title"]), title_map)
     rows = []
     for p, a in matches.items():
         actual_row = actuals.iloc[a]
