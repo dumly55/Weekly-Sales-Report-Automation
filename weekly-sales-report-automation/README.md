@@ -144,7 +144,9 @@ The output is `output/prediction_accuracy_<date>.xlsx`, with four sheets:
 | `06_biggest_misses` | Each forecaster's 5 biggest misses | `RANK() OVER`, filtering a window result |
 | `07_accuracy_over_time` | How has accuracy changed run to run? | `LAG() OVER` across saved runs |
 
-Two **Tableau-ready CSVs** are written: `prediction_history.csv`, every saved run's scores (the source for charting accuracy over time), and, next to the report, (`prediction_accuracy_<date>.csv`). It's in long, tidy format, one row per movie per forecaster, with the forecast, actual, error, % error, direction (too high/too low) and status (released/upcoming), ready to connect to Tableau without reshaping.
+Two **Tableau-ready CSVs** are written, both in long, tidy format (one row per movie per forecaster) so Tableau can use them without reshaping:
+- `prediction_accuracy_<date>.csv`, next to the report: this run's forecast, actual, error, % error, direction (too high/too low), accuracy band and status (released/upcoming).
+- `prediction_history.csv`: every saved run's scores, the source for charting accuracy over time.
 
 ## Tests
 
