@@ -33,9 +33,9 @@ from .predictions import (
     Comparison,
     accuracy_stats,
     compare,
+    load_actuals,
     load_source,
     parse_title_map,
-    read_actuals,
     read_predictions,
 )
 
@@ -433,9 +433,7 @@ def format_value(value: float, kind: str) -> str:
 def run(
     predictions_source: str, actuals_source: str, as_of: date, title_map: list[tuple[str, str]] | None = None
 ) -> tuple[Comparison, list[str], Path]:
-    result = compare(
-        read_predictions(load_source(predictions_source)), read_actuals(load_source(actuals_source)), title_map
-    )
+    result = compare(read_predictions(load_source(predictions_source)), load_actuals(actuals_source), title_map)
     findings = prediction_findings(result)
     out_path = next_free_path(OUTPUT_DIR / f"prediction_accuracy_{as_of}.xlsx")
     build_prediction_workbook(result, findings, out_path, as_of)

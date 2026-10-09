@@ -7,6 +7,7 @@ forecast is scored against the actual worldwide gross once the movie has one.
 
 import difflib
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -140,6 +141,26 @@ def read_actuals(raw: pd.DataFrame) -> pd.DataFrame:
     out["projection"] = to_number(df[mapping["projection"]]) if "projection" in mapping else float("nan")
     out["release_date"] = to_datetime(df[mapping["release_date"]]) if "release_date" in mapping else pd.NaT
     return out
+
+
+ACTUALS_DOWNLOADS = 3
+SECONDS_BETWEEN_DOWNLOADS = 2.0
+
+
+def load_actuals(source: str) -> pd.DataFrame:
+    """Reads the actual-results sheet. A linked sheet is downloaded several times and any actual
+    value seen in any download is kept: sheets that pull results live from a website can return
+    some of those cells blank on one download and filled on the next."""
+    actuals = read_actuals(load_source(source))
+    if not source.lower().startswith(("http://", "https://")):
+        return actuals
+
+    for _ in range(ACTUALS_DOWNLOADS - 1):
+        time.sleep(SECONDS_BETWEEN_DOWNLOADS)
+        retry = read_actuals(load_source(source)).drop_duplicates("title").set_index("title")["actual"]
+        blank = actuals["actual"].isna()
+        actuals.loc[blank, "actual"] = actuals.loc[blank, "title"].map(retry)
+    return actuals
 
 
 @dataclass

@@ -5,6 +5,7 @@ from src.predictions import (
     accuracy_stats,
     clean_title,
     compare,
+    load_actuals,
     match_titles,
     parse_title_map,
     read_actuals,
@@ -99,6 +100,34 @@ class TestReadSheets:
     def test_missing_columns_raise_friendly_error(self):
         with pytest.raises(ValueError, match="Couldn't find a column for: predicted in the predictions sheet"):
             read_predictions(pd.DataFrame({"MOVIE TITLE": ["X"], "Notes": ["y"]}))
+
+
+class TestLoadActuals:
+    def _sheet(self, actuals):
+        rows = [["Movie", "Worldwide Actual"]] + [[t, a] for t, a in actuals]
+        return pd.DataFrame(rows[1:], columns=rows[0])
+
+    def test_linked_sheet_keeps_values_seen_in_any_download(self, monkeypatch):
+        downloads = iter(
+            [
+                self._sheet([("Mercy", "$10"), ("Send Help", None), ("Primate", None)]),
+                self._sheet([("Mercy", None), ("Send Help", "$20"), ("Primate", None)]),
+                self._sheet([("Mercy", "$10"), ("Send Help", None), ("Primate", None)]),
+            ]
+        )
+        monkeypatch.setattr("src.predictions.load_source", lambda source: next(downloads))
+        monkeypatch.setattr("src.predictions.time.sleep", lambda seconds: None)
+
+        actuals = load_actuals("https://example.com/results.csv")
+        assert list(actuals["actual"].fillna(-1)) == [10.0, 20.0, -1]
+
+    def test_local_file_is_read_once(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(
+            "src.predictions.load_source", lambda source: calls.append(source) or self._sheet([("Mercy", "$10")])
+        )
+        load_actuals("results.csv")
+        assert calls == ["results.csv"]
 
 
 class TestCompare:
