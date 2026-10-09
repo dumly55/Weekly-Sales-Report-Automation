@@ -31,6 +31,7 @@ from .excel_report import (
 )
 from .history import HISTORY_DB, fill_from_history, open_history, save_actuals, save_scores, write_history
 from .main import OUTPUT_DIR, describe_error, next_free_path, setup_logging
+from .sql_insights import Insight, run_insights
 from .predictions import (
     Comparison,
     accuracy_stats,
@@ -369,7 +370,34 @@ def _build_unmatched_sheet(ws, result: Comparison) -> None:
     _add_table_polish(ws, header_row, max(last_row, header_row), last_col=2)
 
 
-def build_prediction_workbook(result: Comparison, findings: list[str], out_path: Path, as_of: date) -> None:
+# Long title lists from the SQL queries are left out of the report tables; the Scorecard names the movies.
+INSIGHT_HIDDEN_COLUMNS = {"titles"}
+
+
+def _insight_table(insight: Insight) -> pd.DataFrame:
+    return insight.table.drop(columns=[c for c in insight.table.columns if c in INSIGHT_HIDDEN_COLUMNS])
+
+
+def _build_insights_sheet(ws, insights: list[Insight]) -> None:
+    _write_title(ws, "SQL Insights: the queries in the sql/ folder, run on the results history", span_cols=6)
+    row = 3
+    for insight in insights:
+        ws.cell(row=row, column=1, value=f"{insight.question}  ({insight.name}.sql)").font = Font(
+            size=12, bold=True, color="1F4E78"
+        )
+        table = _insight_table(insight)
+        if table.empty:
+            ws.cell(row=row + 1, column=1, value="No rows yet.")
+            row += 3
+            continue
+        row = _write_dataframe(ws, _for_excel(table), row + 1) + 3
+    for col in "ABCDEFGH":
+        ws.column_dimensions[col].width = 22
+
+
+def build_prediction_workbook(
+    result: Comparison, findings: list[str], out_path: Path, as_of: date, insights: list[Insight] | None = None
+) -> None:
     wb = Workbook()
     scorecard_ws = wb.active
     scorecard_ws.title = "Scorecard"
@@ -377,7 +405,11 @@ def build_prediction_workbook(result: Comparison, findings: list[str], out_path:
     _build_movies_sheet(wb.create_sheet("Movie by Movie"), result)
     _build_upcoming_sheet(wb.create_sheet("Upcoming"), result)
     _build_unmatched_sheet(wb.create_sheet("Unmatched"), result)
-    for name, color in {"Scorecard": "1F4E78", "Movie by Movie": "2E7D32", "Upcoming": "6A1B9A", "Unmatched": "757575"}.items():
+    tab_colors = {"Scorecard": "1F4E78", "Movie by Movie": "2E7D32", "Upcoming": "6A1B9A", "Unmatched": "757575"}
+    if insights:
+        _build_insights_sheet(wb.create_sheet("SQL Insights"), insights)
+        tab_colors["SQL Insights"] = "EF6C00"
+    for name, color in tab_colors.items():
         wb[name].sheet_properties.tabColor = color
     out_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(out_path)
@@ -409,7 +441,18 @@ def tableau_rows(result: Comparison) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
-def summary_markdown(result: Comparison, findings: list[str], as_of: date) -> str:
+def _markdown_table(table: pd.DataFrame) -> list[str]:
+    def cell(value) -> str:
+        return "" if pd.isna(value) else str(value).replace("|", "\\|")
+
+    lines = ["| " + " | ".join(table.columns) + " |", "|" + "---|" * len(table.columns)]
+    lines += ["| " + " | ".join(cell(v) for v in row) + " |" for row in table.itertuples(index=False)]
+    return lines
+
+
+def summary_markdown(
+    result: Comparison, findings: list[str], as_of: date, insights: list[Insight] | None = None
+) -> str:
     lines = [f"## Prediction Accuracy as of {as_of}", ""]
     rows = scorecard(result)
     if rows:
@@ -426,6 +469,14 @@ def summary_markdown(result: Comparison, findings: list[str], as_of: date) -> st
         for label, values, kind in stats:
             lines.append(f"| {label} | " + " | ".join(format_value(v, kind) for v in values) + " |")
         lines += ["", "</details>"]
+
+    if insights:
+        lines += ["", "<details><summary>SQL insights (queries in the sql/ folder)</summary>", ""]
+        for insight in insights:
+            lines += [f"**{insight.question}** (`{insight.name}.sql`)", ""]
+            table = _insight_table(insight)
+            lines += (_markdown_table(table) if not table.empty else ["No rows yet."]) + [""]
+        lines += ["</details>"]
     return "\n".join(lines) + "\n"
 
 
@@ -439,6 +490,19 @@ def format_value(value: float, kind: str) -> str:
     return f"{value:,.0f}"
 
 
+@dataclass
+class PredictionRun:
+    result: Comparison
+    findings: list[str]
+    out_path: Path  # the Excel report; this run's Tableau CSV sits next to it with a .csv suffix
+    insights: list[Insight]
+
+    @property
+    def history_csv(self) -> Path:
+        """Every saved run's scores plus this one: the Tableau source for trends over time."""
+        return self.out_path.parent / "prediction_history.csv"
+
+
 def run(
     predictions_source: str,
     actuals_source: str,
@@ -446,10 +510,10 @@ def run(
     title_map: list[tuple[str, str]] | None = None,
     history_path: Path = HISTORY_DB,
     save_history: bool = False,
-) -> tuple[Comparison, list[str], Path]:
+) -> PredictionRun:
     """Scores the predictions and writes the report. This run's actuals and scores are added to an
-    in-memory copy of the results history (blank actuals are filled from it); `save_history`
-    writes that copy back to the history file."""
+    in-memory copy of the results history (blank actuals are filled from it), and the SQL queries
+    run on that copy; `save_history` writes it back to the history file."""
     log = logging.getLogger(__name__)
     actuals = load_actuals(actuals_source)
     predictions = read_predictions(load_source(predictions_source))
@@ -461,19 +525,24 @@ def run(
         result.restored_from_history = [t for t in restored if t in set(result.movies["title"])]
         scores = tableau_rows(result)
         save_scores(scores, conn, as_of)
+        insights = run_insights(conn)
+        history = pd.read_sql_query("SELECT * FROM movie_scores ORDER BY run_date, movie, forecaster", conn)
         if save_history:
             write_history(conn, history_path)
             log.info("Saved this run's actuals and %d scores to %s", len(scores), history_path)
 
     findings = prediction_findings(result)
     out_path = next_free_path(OUTPUT_DIR / f"prediction_accuracy_{as_of}.xlsx")
-    build_prediction_workbook(result, findings, out_path, as_of)
+    build_prediction_workbook(result, findings, out_path, as_of, insights)
+    output = PredictionRun(result, findings, out_path, insights)
     scores.to_csv(out_path.with_suffix(".csv"), index=False)
-    log.info("Prediction report written to %s (+ .csv for Tableau)", out_path)
-    return result, findings, out_path
+    history.to_csv(output.history_csv, index=False)
+    log.info("Prediction report written to %s (+ .csv files for Tableau)", out_path)
+    return output
 
 
-def _print_summary(result: Comparison, findings: list[str], out_path: Path, as_of: date) -> None:
+def _print_summary(run_output: PredictionRun, as_of: date) -> None:
+    result, findings, out_path = run_output.result, run_output.findings, run_output.out_path
     rows = scorecard(result)
     if rows:
         table = Table(title=f"Prediction Accuracy as of {as_of}", title_style="bold cyan", show_lines=True)
@@ -488,7 +557,8 @@ def _print_summary(result: Comparison, findings: list[str], out_path: Path, as_o
     for finding in findings:
         console.print(f"  • {escape(finding)}")
     console.print(f"\n[bold green]Report written[/bold green] to [bold]{out_path}[/bold]")
-    console.print(f"[bold green]Tableau-ready data[/bold green] in [bold]{out_path.with_suffix('.csv')}[/bold]\n")
+    console.print(f"[bold green]Tableau-ready data[/bold green] in [bold]{out_path.with_suffix('.csv')}[/bold]")
+    console.print(f"[bold green]Full history for Tableau[/bold green] in [bold]{run_output.history_csv}[/bold]\n")
 
 
 def _parse_title_map(value: str) -> list[tuple[str, str]]:
@@ -520,17 +590,15 @@ def main() -> None:
     as_of = date.today()
     setup_logging(as_of, "predictions")
     try:
-        result, findings, out_path = run(
-            args.predictions, args.actuals, as_of, args.title_map, save_history=args.save_history
-        )
+        output = run(args.predictions, args.actuals, as_of, args.title_map, save_history=args.save_history)
         if args.markdown_summary:
             with open(args.markdown_summary, "a", encoding="utf-8") as summary_file:
-                summary_file.write(summary_markdown(result, findings, as_of))
+                summary_file.write(summary_markdown(output.result, output.findings, as_of, output.insights))
     except Exception as exc:
         logging.getLogger(__name__).exception("Prediction report failed")
         console.print(f"[bold red]Error:[/bold red] {describe_error(exc)}")
         sys.exit(1)
-    _print_summary(result, findings, out_path, as_of)
+    _print_summary(output, as_of)
 
 
 if __name__ == "__main__":

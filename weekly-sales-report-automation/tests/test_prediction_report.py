@@ -15,6 +15,7 @@ from src.prediction_report import (
     tableau_rows,
 )
 from src.predictions import compare
+from src.sql_insights import Insight
 
 AS_OF = date(2026, 10, 8)
 
@@ -139,11 +140,18 @@ def test_run_end_to_end_with_local_files(tmp_path, monkeypatch):
     (tmp_path / "actuals.csv").write_text(
         "Report,,\nMovie,Release Date,Worldwide Actual\nMercy 👮🏻,23/01/2026,\"$54,709,856\"\n", encoding="utf-8"
     )
-    result, findings, out_path = run(str(tmp_path / "predictions.csv"), str(tmp_path / "actuals.csv"), AS_OF)
+    output = run(
+        str(tmp_path / "predictions.csv"), str(tmp_path / "actuals.csv"), AS_OF, history_path=tmp_path / "h.sqlite"
+    )
 
-    assert out_path == tmp_path / "prediction_accuracy_2026-10-08.xlsx" and out_path.exists()
-    assert len(pd.read_csv(out_path.with_suffix(".csv"))) == 1
-    assert findings[0] == "1 of the 1 matched movies have been released and scored so far."
+    assert output.out_path == tmp_path / "prediction_accuracy_2026-10-08.xlsx" and output.out_path.exists()
+    assert len(pd.read_csv(output.out_path.with_suffix(".csv"))) == 1
+    assert output.findings[0] == "1 of the 1 matched movies have been released and scored so far."
+
+    assert len(output.insights) == 7
+    assert "SQL Insights" in load_workbook(output.out_path).sheetnames
+    history = pd.read_csv(output.history_csv)
+    assert list(history[["run_date", "movie", "forecaster"]].iloc[0]) == ["2026-10-08", "Mercy", "Predictions"]
 
 
 def test_summary_markdown():
@@ -154,3 +162,17 @@ def test_summary_markdown():
     assert "<details><summary>Detailed stats</summary>" in markdown
     assert "| Median error (either direction) | 50.0% | 0.0% |" in markdown
     assert "- Best call: Alpha, predicted $110 vs $100 actual (+10.0%)." in markdown
+    assert "SQL insights" not in markdown
+
+
+def test_summary_markdown_with_sql_insights():
+    result = _result()
+    insights = [
+        Insight("02_median_miss", "What is the median miss?", pd.DataFrame({"forecaster": ["Predictions"], "median_miss_pct": [50.0]})),
+        Insight("03_accuracy_bands", "Which band?", pd.DataFrame({"accuracy_band": ["Off"], "movies": [1], "titles": ["Bravo"]})),
+    ]
+    markdown = summary_markdown(result, prediction_findings(result), AS_OF, insights)
+    assert "<details><summary>SQL insights (queries in the sql/ folder)</summary>" in markdown
+    assert "**What is the median miss?** (`02_median_miss.sql`)" in markdown
+    assert "| Predictions | 50.0 |" in markdown
+    assert "| accuracy_band | movies |" in markdown, "the long titles column is left out"

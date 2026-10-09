@@ -65,6 +65,7 @@ jobs:
           name: prediction-report
           path: |
             weekly-sales-report-automation/output/prediction_accuracy_*
+            weekly-sales-report-automation/output/prediction_history.csv
             weekly-sales-report-automation/logs/predictions_*.log
           if-no-files-found: ignore
           retention-days: 90

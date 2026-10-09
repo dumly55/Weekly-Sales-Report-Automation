@@ -94,13 +94,14 @@ class TestRunWithHistory:
         run(str(predictions), str(actuals), date(2026, 10, 5), history_path=history, save_history=True)
 
         actuals.write_text("Movie,Worldwide Actual\nMercy,\nSend Help,$100\n", encoding="utf-8")
-        result, findings, _ = run(
-            str(predictions), str(actuals), date(2026, 10, 12), history_path=history, save_history=True
-        )
+        output = run(str(predictions), str(actuals), date(2026, 10, 12), history_path=history, save_history=True)
 
-        assert result.movies["released"].sum() == 2
-        assert result.restored_from_history == ["Mercy"]
-        assert "1 movie had no result in the results sheet this time, so the last known result was used: Mercy." in findings
+        assert output.result.movies["released"].sum() == 2
+        assert output.result.restored_from_history == ["Mercy"]
+        assert (
+            "1 movie had no result in the results sheet this time, so the last known result was used: Mercy."
+            in output.findings
+        )
         with closing(sqlite3.connect(history)) as disk:
             runs = disk.execute("SELECT run_date, COUNT(*) FROM movie_scores GROUP BY run_date").fetchall()
         assert runs == [("2026-10-05", 2), ("2026-10-12", 2)]

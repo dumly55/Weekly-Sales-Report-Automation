@@ -126,6 +126,7 @@ The output is `output/prediction_accuracy_<date>.xlsx`, with four sheets:
 - **Movie by Movie:** every released movie, with each forecast's % error and which forecaster was closer.
 - **Upcoming:** matched movies still waiting on an actual result.
 - **Unmatched:** titles found in only one sheet, so nothing is silently dropped.
+- **SQL Insights:** the results of every query in the `sql/` folder (below), run on the results history.
 
 **Runs weekly on its own:** the **Prediction Report** workflow ([`prediction-report.yml`](../.github/workflows/prediction-report.yml)) runs every Monday at 06:30 UTC, or on demand with **Run workflow**. It re-reads both sheets, so newly filled-in actuals are scored automatically, posts the scorecard and findings on the run page, attaches the Excel report and CSV, and commits the updated results history (`data/prediction_history.sqlite`) back to the repo. Set it up under **Settings → Secrets and variables → Actions → Variables** with `PREDICTIONS_URL` and `ACTUALS_URL` (both sheets shared as "Anyone with the link can view"), plus an optional `TITLE_MAP`.
 
@@ -143,7 +144,7 @@ The output is `output/prediction_accuracy_<date>.xlsx`, with four sheets:
 | `06_biggest_misses` | Each forecaster's 5 biggest misses | `RANK() OVER`, filtering a window result |
 | `07_accuracy_over_time` | How has accuracy changed run to run? | `LAG() OVER` across saved runs |
 
-A **Tableau-ready CSV** is written next to it (`prediction_accuracy_<date>.csv`). It's in long, tidy format, one row per movie per forecaster, with the forecast, actual, error, % error, direction (too high/too low) and status (released/upcoming), ready to connect to Tableau without reshaping.
+Two **Tableau-ready CSVs** are written: `prediction_history.csv`, every saved run's scores (the source for charting accuracy over time), and, next to the report, (`prediction_accuracy_<date>.csv`). It's in long, tidy format, one row per movie per forecaster, with the forecast, actual, error, % error, direction (too high/too low) and status (released/upcoming), ready to connect to Tableau without reshaping.
 
 ## Tests
 
@@ -151,7 +152,7 @@ A **Tableau-ready CSV** is written next to it (`prediction_accuracy_<date>.csv`)
 pytest
 ```
 
-148 tests covering the SQL queries (`test_sql_insights.py`, including a check that the SQL median matches the Python one), the results history (`test_history.py`), the prediction scoring and its report (`test_predictions.py`, `test_prediction_report.py`), the findings rules (`test_findings.py`), the cleaning rules and messy-value parsing (`test_clean.py`), column recognition for differently shaped sheets (`test_normalize.py`), KPI/week-boundary math and summary formatting (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
+149 tests covering the SQL queries (`test_sql_insights.py`, including a check that the SQL median matches the Python one), the results history (`test_history.py`), the prediction scoring and its report (`test_predictions.py`, `test_prediction_report.py`), the findings rules (`test_findings.py`), the cleaning rules and messy-value parsing (`test_clean.py`), column recognition for differently shaped sheets (`test_normalize.py`), KPI/week-boundary math and summary formatting (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
 
 ## Scheduled weekly run
 

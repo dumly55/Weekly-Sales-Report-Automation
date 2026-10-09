@@ -352,7 +352,7 @@ class PredictionTab:
             self.status_var.set("Something went wrong.")
             messagebox.showerror("Scoring failed", payload)
             return
-        result, findings, out_path = payload
+        result, findings, out_path = payload.result, payload.findings, payload.out_path
         scored = int(result.movies["released"].sum())
         self.status_var.set(f"Done. Scored {scored} released movie{'' if scored == 1 else 's'}.")
         self._show_results(result, findings, out_path)
