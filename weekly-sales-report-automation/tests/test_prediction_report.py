@@ -4,16 +4,14 @@ import pandas as pd
 import pytest
 from openpyxl import load_workbook
 
-from src.prediction_report import (
+from src.prediction_excel import build_prediction_workbook
+from src.prediction_findings import (
     accuracy_band,
-    build_prediction_workbook,
     prediction_findings,
-    run,
     scorecard,
     short_money,
-    summary_markdown,
-    tableau_rows,
 )
+from src.prediction_report import run, summary_markdown, tableau_rows
 from src.predictions import compare
 from src.sql_insights import Insight
 

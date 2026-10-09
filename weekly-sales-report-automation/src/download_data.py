@@ -11,7 +11,13 @@ from typing import Callable
 
 import pandas as pd
 import requests
-from rich.progress import BarColumn, DownloadColumn, Progress, TimeRemainingColumn, TransferSpeedColumn
+from rich.progress import (
+    BarColumn,
+    DownloadColumn,
+    Progress,
+    TimeRemainingColumn,
+    TransferSpeedColumn,
+)
 
 DATASET_URL = "https://archive.ics.uci.edu/static/public/352/online+retail.zip"
 RAW_DIR = Path(__file__).resolve().parent.parent / "data" / "raw"

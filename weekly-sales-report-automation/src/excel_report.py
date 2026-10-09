@@ -1,27 +1,26 @@
-"""Builds the formatted weekly Excel report from computed KPI data."""
+"""Builds the formatted weekly sales Excel report from computed KPI data."""
 
 from pathlib import Path
 
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.chart import BarChart, LineChart, Reference
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from .clean import QualityLog
+from .excel_style import (
+    BAD_FONT,
+    BOLD,
+    GOOD_FONT,
+    add_table_polish,
+    write_dataframe,
+    write_findings,
+    write_header_row,
+    write_title,
+)
 from .report import WeeklyReportData
-
-HEADER_FILL = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
-HEADER_FONT = Font(color="FFFFFF", bold=True)
-TITLE_FONT = Font(size=16, bold=True, color="1F4E78")
-BOLD = Font(bold=True)
-ZEBRA_FILL = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
-GOOD_FONT = Font(color="1F7A1F", bold=True)
-BAD_FONT = Font(color="C00000", bold=True)
-
-_GRID_SIDE = Side(style="thin", color="BFBFBF")
-GRID_BORDER = Border(left=_GRID_SIDE, right=_GRID_SIDE, top=_GRID_SIDE, bottom=_GRID_SIDE)
 
 COUNT_FORMAT = "#,##0"
 
@@ -42,91 +41,12 @@ TAB_COLORS = {
 }
 
 
-def _write_title(ws: Worksheet, text: str, span_cols: int, row: int = 1) -> None:
-    cell = ws.cell(row=row, column=1, value=text)
-    cell.font = TITLE_FONT
-    if span_cols > 1:
-        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=span_cols)
-
-
-def _write_header_row(ws: Worksheet, headers: list[str], row: int, start_col: int = 1) -> None:
-    for offset, header in enumerate(headers):
-        cell = ws.cell(row=row, column=start_col + offset, value=header)
-        cell.fill = HEADER_FILL
-        cell.font = HEADER_FONT
-        cell.alignment = Alignment(horizontal="center")
-        cell.border = GRID_BORDER
-
-
-def _write_dataframe(
-    ws: Worksheet,
-    df: pd.DataFrame,
-    start_row: int,
-    start_col: int = 1,
-    number_formats: dict[int, str] | None = None,
-    zebra: bool = True,
-) -> int:
-    """Writes a DataFrame with a styled, bordered header row and optional zebra striping.
-
-    `number_formats` maps a 0-indexed column offset to a number format string,
-    applied to every data cell in that column. Returns the last row written.
-    """
-    number_formats = number_formats or {}
-    _write_header_row(ws, list(df.columns), start_row, start_col)
-
-    for r, (_, row) in enumerate(df.iterrows(), start=start_row + 1):
-        is_alt_row = zebra and (r - start_row) % 2 == 0
-        for c, value in enumerate(row):
-            cell = ws.cell(row=r, column=start_col + c, value=value)
-            cell.border = GRID_BORDER
-            if c in number_formats:
-                cell.number_format = number_formats[c]
-            if is_alt_row:
-                cell.fill = ZEBRA_FILL
-
-    last_row = start_row + len(df)
-    for offset, col in enumerate(df.columns):
-        content_width = max((len(str(v)) for v in df[col]), default=0)
-        width = min(40, max(12, len(str(col)) + 2, content_width + 2))
-        ws.column_dimensions[get_column_letter(start_col + offset)].width = width
-
-    return last_row
-
-
-def _add_table_polish(ws: Worksheet, header_row: int, last_row: int, last_col: int) -> None:
-    """Adds an autofilter and freezes the header row so it stays visible while scrolling."""
-    last_col_letter = get_column_letter(last_col)
-    ws.auto_filter.ref = f"A{header_row}:{last_col_letter}{last_row}"
-    ws.freeze_panes = f"A{header_row + 1}"
-
-
 def _autofit_first_column(ws: Worksheet, width: int = 22) -> None:
     ws.column_dimensions["A"].width = width
 
 
-FINDINGS_SPAN_COLS = 4
-FINDINGS_CHARS_PER_LINE = 70
-
-
-def _write_findings(ws: Worksheet, findings: list[str], start_row: int) -> int:
-    """Writes a "Key findings" block, one wrapped finding per row across the KPI table's width.
-    Returns the last row used (start_row - 1 if there are no findings)."""
-    if not findings:
-        return start_row - 1
-    ws.cell(row=start_row, column=1, value="Key findings").font = Font(size=12, bold=True, color="1F4E78")
-    for offset, finding in enumerate(findings, start=1):
-        row = start_row + offset
-        cell = ws.cell(row=row, column=1, value=f"• {finding}")
-        cell.alignment = Alignment(wrap_text=True, vertical="top")
-        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=FINDINGS_SPAN_COLS)
-        # Excel doesn't auto-fit the height of merged cells, so estimate it from the text length.
-        lines = -(-len(finding) // FINDINGS_CHARS_PER_LINE)
-        ws.row_dimensions[row].height = 15 * lines + 2
-    return start_row + len(findings)
-
-
 def _build_summary_sheet(ws: Worksheet, data: WeeklyReportData) -> None:
-    _write_title(ws, f"Weekly Sales Report: {data.week_label}", span_cols=4)
+    write_title(ws, f"Weekly Sales Report: {data.week_label}", span_cols=4)
     _autofit_first_column(ws)
     currency_format = _currency_format(data.currency)
     cancellations_value_label = f"Cancellations (value, {data.currency})" if data.currency else "Cancellations (value)"
@@ -143,7 +63,7 @@ def _build_summary_sheet(ws: Worksheet, data: WeeklyReportData) -> None:
     kpi_df = pd.DataFrame([row[:4] for row in kpi_rows], columns=["Metric", "This Week", "Last Week", "WoW % Change"])
 
     header_row = 3
-    last_row = _write_dataframe(ws, kpi_df, header_row, zebra=True)
+    last_row = write_dataframe(ws, kpi_df, header_row, zebra=True)
 
     # WoW values come from `kpi_rows` directly (not re-read from the cell) because pandas
     # coerces a mixed [float, None] column to float64 with NaN in place of None, and NaN
@@ -165,12 +85,12 @@ def _build_summary_sheet(ws: Worksheet, data: WeeklyReportData) -> None:
 
     ws.freeze_panes = f"B{header_row + 1}"
 
-    last_row = _write_findings(ws, data.findings, start_row=last_row + 2)
+    last_row = write_findings(ws, data.findings, start_row=last_row + 2)
 
     # Daily revenue trend data (written off to the side, feeds the chart)
     chart_start_row = last_row + 3
     ws.cell(row=chart_start_row, column=1, value="Daily Revenue Trend").font = BOLD
-    daily_last_row = _write_dataframe(ws, data.daily, chart_start_row + 1, number_formats={1: currency_format})
+    daily_last_row = write_dataframe(ws, data.daily, chart_start_row + 1, number_formats={1: currency_format})
 
     chart = LineChart()
     chart.title = "Daily Revenue Trend"
@@ -186,12 +106,12 @@ def _build_summary_sheet(ws: Worksheet, data: WeeklyReportData) -> None:
 
 
 def _build_top_products_sheet(ws: Worksheet, data: WeeklyReportData) -> None:
-    _write_title(ws, "Top 10 Products by Revenue", span_cols=3)
+    write_title(ws, "Top 10 Products by Revenue", span_cols=3)
     header_row = 3
-    last_row = _write_dataframe(
+    last_row = write_dataframe(
         ws, data.top_products, header_row, number_formats={2: _currency_format(data.currency), 3: COUNT_FORMAT}
     )
-    _add_table_polish(ws, header_row, last_row, last_col=len(data.top_products.columns))
+    add_table_polish(ws, header_row, last_row, last_col=len(data.top_products.columns))
 
     chart = BarChart()
     chart.title = "Top Products by Revenue"
@@ -206,12 +126,12 @@ def _build_top_products_sheet(ws: Worksheet, data: WeeklyReportData) -> None:
 
 
 def _build_by_country_sheet(ws: Worksheet, data: WeeklyReportData) -> None:
-    _write_title(ws, "Revenue by Country", span_cols=3)
+    write_title(ws, "Revenue by Country", span_cols=3)
     header_row = 3
-    last_row = _write_dataframe(
+    last_row = write_dataframe(
         ws, data.by_country, header_row, number_formats={1: _currency_format(data.currency), 2: COUNT_FORMAT}
     )
-    _add_table_polish(ws, header_row, last_row, last_col=len(data.by_country.columns))
+    add_table_polish(ws, header_row, last_row, last_col=len(data.by_country.columns))
 
     chart = BarChart()
     chart.title = "Revenue by Country"
@@ -226,7 +146,7 @@ def _build_by_country_sheet(ws: Worksheet, data: WeeklyReportData) -> None:
 
 
 def _build_quality_log_sheet(ws: Worksheet, quality_log: QualityLog) -> None:
-    _write_title(ws, "Data Quality Log", span_cols=3)
+    write_title(ws, "Data Quality Log", span_cols=3)
     _autofit_first_column(ws, 30)
     descriptions = {
         "rows_in": "Raw rows read from source export",
@@ -242,8 +162,8 @@ def _build_quality_log_sheet(ws: Worksheet, quality_log: QualityLog) -> None:
         columns=["Check", "Count", "Description"],
     )
     header_row = 3
-    last_row = _write_dataframe(ws, df, header_row, number_formats={1: COUNT_FORMAT})
-    _add_table_polish(ws, header_row, last_row, last_col=len(df.columns))
+    last_row = write_dataframe(ws, df, header_row, number_formats={1: COUNT_FORMAT})
+    add_table_polish(ws, header_row, last_row, last_col=len(df.columns))
 
 
 ORGANIZED_COLUMNS = {
@@ -275,9 +195,9 @@ def _build_organized_sheet(ws: Worksheet, sales_df: pd.DataFrame, data: WeeklyRe
     rows = rows.sort_values(["InvoiceDate", "InvoiceNo"])[list(ORGANIZED_COLUMNS)]
     rows = rows.astype(object).where(rows.notna(), None)
 
-    _write_title(ws, title, span_cols=len(ORGANIZED_COLUMNS))
+    write_title(ws, title, span_cols=len(ORGANIZED_COLUMNS))
     header_row = 3
-    _write_header_row(ws, [label for label, _ in ORGANIZED_COLUMNS.values()], header_row)
+    write_header_row(ws, [label for label, _ in ORGANIZED_COLUMNS.values()], header_row)
     for values in rows.itertuples(index=False):
         ws.append(list(values))
 
@@ -289,7 +209,7 @@ def _build_organized_sheet(ws: Worksheet, sales_df: pd.DataFrame, data: WeeklyRe
     for col, (_, width) in enumerate(ORGANIZED_COLUMNS.values(), start=1):
         ws.column_dimensions[get_column_letter(col)].width = width
 
-    _add_table_polish(ws, header_row, max(last_row, header_row), last_col=len(ORGANIZED_COLUMNS))
+    add_table_polish(ws, header_row, max(last_row, header_row), last_col=len(ORGANIZED_COLUMNS))
     ws.sheet_properties.tabColor = "EF6C00"
 
 

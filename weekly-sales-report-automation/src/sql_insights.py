@@ -8,12 +8,20 @@ import pandas as pd
 
 SQL_DIR = Path(__file__).resolve().parent.parent / "sql"
 
+# Long title lists are left out of report tables (the scorecard names the movies); explore them in the database.
+HIDDEN_IN_REPORTS = {"titles"}
+
 
 @dataclass
 class Insight:
     name: str  # file name without .sql, e.g. "02_median_miss"
     question: str  # from the file's "-- Question:" line
     table: pd.DataFrame
+
+    @property
+    def display_table(self) -> pd.DataFrame:
+        """The query result as shown in reports."""
+        return self.table.drop(columns=[c for c in self.table.columns if c in HIDDEN_IN_REPORTS])
 
 
 def _question(sql: str, fallback: str) -> str:

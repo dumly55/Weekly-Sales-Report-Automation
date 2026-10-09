@@ -5,7 +5,13 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from src.history import fill_from_history, open_history, save_actuals, save_scores, write_history
+from src.history import (
+    fill_from_history,
+    open_history,
+    save_actuals,
+    save_scores,
+    write_history,
+)
 from src.prediction_report import run
 
 

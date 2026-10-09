@@ -17,7 +17,7 @@ from tkinter import filedialog, messagebox, ttk
 from tkcalendar import DateEntry
 
 from .main import describe_error, run_pipeline, setup_logging
-from .prediction_report import scorecard
+from .prediction_findings import scorecard
 from .prediction_report import run as run_predictions
 from .predictions import IN_THEATERS, parse_title_map
 from .report import format_wow

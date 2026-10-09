@@ -1,10 +1,13 @@
 from unittest.mock import MagicMock, patch
 
-import pandas as pd
 import pytest
 import requests
 
-from src.download_data import _normalize_google_sheet_url, _stream_download, fetch_remote_dataset
+from src.download_data import (
+    _normalize_google_sheet_url,
+    _stream_download,
+    fetch_remote_dataset,
+)
 
 RAW_COLUMNS = "InvoiceNo,StockCode,Description,Quantity,InvoiceDate,UnitPrice,CustomerID,Country"
 

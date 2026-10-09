@@ -16,7 +16,12 @@ from rich.markup import escape
 from rich.table import Table
 
 from .clean import QualityLog, clean_transactions, load_raw
-from .download_data import StatusCallback, ensure_raw_data, fetch_remote_dataset, load_local_dataset
+from .download_data import (
+    StatusCallback,
+    ensure_raw_data,
+    fetch_remote_dataset,
+    load_local_dataset,
+)
 from .excel_report import build_workbook
 from .findings import build_findings
 from .normalize import detect_currency, parse_column_map, standardize
