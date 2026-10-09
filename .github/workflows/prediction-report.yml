@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write # to commit the updated results history back to the repo
 
 jobs:
   report:
@@ -41,9 +41,22 @@ jobs:
             echo "Skipped: set the PREDICTIONS_URL and ACTUALS_URL repository variables to enable this report." | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          args=(--predictions "$PREDICTIONS_URL" --actuals "$ACTUALS_URL" --markdown-summary "$GITHUB_STEP_SUMMARY")
+          args=(--predictions "$PREDICTIONS_URL" --actuals "$ACTUALS_URL" --save-history --markdown-summary "$GITHUB_STEP_SUMMARY")
           if [ -n "$TITLE_MAP" ]; then args+=(--title-map "$TITLE_MAP"); fi
           python -m src.prediction_report "${args[@]}"
+
+      - name: Commit the updated results history
+        run: |
+          git add data/prediction_history.sqlite 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "Results history unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update prediction results history"
+          git pull --rebase origin main
+          git push origin HEAD:main
 
       - name: Upload report, Tableau CSV and log
         if: always()
