@@ -122,7 +122,7 @@ python -m src.prediction_report --predictions "<link or file>" --actuals "<link 
 - **Matching titles:** titles are matched across the sheets ignoring emojis, case and punctuation. Close spellings also match (`Coyote v. Acme` / `Coyote vs. Acme`), but only between titles with the same numbers, so `Toy Story 5` never matches `Toy Story 4`. For movies listed under different names, add `--title-map "Minions 3=MINIONS AND MONSTERS; Jumanji 3=JUMANJI: OPEN WORLD"` (results title=predictions title, separated by semicolons).
 
 The output is `output/prediction_accuracy_<date>.xlsx`, with four sheets:
-- **Scorecard:** accuracy stats for both forecasters side by side, plus the key findings. Errors are relative to the actual result, and medians lead, because one wild miss can dominate an average.
+- **Scorecard:** simple measures, each listing the movies behind it: typical miss; how many predictions were nailed (within 10%), close (10–25%), off (25–50%) or way off (over 50%); too high vs too low; and which movies beat the tracker. Then the key findings, then the detailed side-by-side stats for both forecasters. Errors are relative to the actual result, and medians lead, because one wild miss can dominate an average.
 - **Movie by Movie:** every released movie, with each forecast's % error and which forecaster was closer.
 - **Upcoming:** matched movies still waiting on an actual result.
 - **Unmatched:** titles found in only one sheet, so nothing is silently dropped.
@@ -137,7 +137,7 @@ A **Tableau-ready CSV** is written next to it (`prediction_accuracy_<date>.csv`)
 pytest
 ```
 
-126 tests covering the prediction scoring and its report (`test_predictions.py`, `test_prediction_report.py`), the findings rules (`test_findings.py`), the cleaning rules and messy-value parsing (`test_clean.py`), column recognition for differently shaped sheets (`test_normalize.py`), KPI/week-boundary math and summary formatting (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
+129 tests covering the prediction scoring and its report (`test_predictions.py`, `test_prediction_report.py`), the findings rules (`test_findings.py`), the cleaning rules and messy-value parsing (`test_clean.py`), column recognition for differently shaped sheets (`test_normalize.py`), KPI/week-boundary math and summary formatting (`test_report.py`), the generated workbook's structure and a pandas `NaN`/`None` regression (`test_excel_report.py`), and the custom data-link handling including Google Sheet URL rewriting (`test_download_data.py`). The GUI (`src/gui.py`) isn't covered by automated tests since it needs a real display, but it reuses the same tested `run_pipeline` function as the CLI.
 
 ## Scheduled weekly run
 

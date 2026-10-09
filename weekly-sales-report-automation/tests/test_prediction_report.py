@@ -5,9 +5,11 @@ import pytest
 from openpyxl import load_workbook
 
 from src.prediction_report import (
+    accuracy_band,
     build_prediction_workbook,
     prediction_findings,
     run,
+    scorecard,
     short_money,
     summary_markdown,
     tableau_rows,
@@ -55,6 +57,31 @@ class TestFindings:
         assert not any("typically off" in f for f in findings)
 
 
+def test_scorecard_lists_the_movies_behind_each_measure():
+    rows = [(r.measure, r.result, r.movies) for r in scorecard(_result())]
+    assert rows == [
+        ("Movies scored", "3 of 4 matched movies", []),
+        ("Typical miss (median)", "50%", []),
+        ("Nailed it (within 10%)", "1 of 3", ["Alpha (+10%)"]),
+        ("Close (10-25% off)", "0 of 3", []),
+        ("Off (25-50% off)", "1 of 3", ["Bravo (-50%)"]),
+        ("Way off (more than 50% off)", "1 of 3", ["Charlie (+300%)"]),
+        ("Predicted too high", "2 of 3", ["Charlie (+300%)", "Alpha (+10%)"]),
+        ("Predicted too low", "1 of 3", ["Bravo (-50%)"]),
+        ("Closer than the tracker", "0 of 3", []),
+        ("Tracker's typical miss (median)", "0%", []),
+        ("Total predicted vs actual", "$560 vs $300 (+86.7%)", []),
+    ]
+
+
+def test_scorecard_is_empty_before_any_release():
+    assert scorecard(_result(with_released=False)) == []
+
+
+def test_accuracy_bands_have_inclusive_upper_limits():
+    assert [accuracy_band(v) for v in (0, 10, 10.1, 25, 50, 50.1)] == ["Nailed it", "Nailed it", "Close", "Close", "Off", "Way off"]
+
+
 def test_short_money():
     assert short_money(2_506_720_000) == "$2.51B"
     assert short_money(58_527_279) == "$58.5M"
@@ -70,11 +97,14 @@ class TestWorkbook:
         wb = load_workbook(out_path)
         assert wb.sheetnames == ["Scorecard", "Movie by Movie", "Upcoming", "Unmatched"]
 
-        scorecard = wb["Scorecard"]
-        assert [c.value for c in scorecard[3]][:3] == ["Metric", "Predictions", "Tracker Projection"]
-        assert scorecard["A5"].value == "Median error (either direction)"
-        assert scorecard["B5"].value == pytest.approx(0.5)
-        assert scorecard["B5"].number_format == "0.0%"
+        ws = wb["Scorecard"]
+        assert [c.value for c in ws[3]][:3] == ["Measure", "Result", "Movies"]
+        assert [ws["A6"].value, ws["B6"].value, ws["C6"].value] == ["Nailed it (within 10%)", "1 of 3", "Alpha (+10%)"]
+        detailed = next(r for r in range(1, ws.max_row + 1) if ws.cell(row=r, column=1).value == "Detailed stats")
+        assert ws.cell(row=detailed + 1, column=1).value == "Metric"
+        assert ws.cell(row=detailed + 3, column=1).value == "Median error (either direction)"
+        assert ws.cell(row=detailed + 3, column=2).value == pytest.approx(0.5)
+        assert ws.cell(row=detailed + 3, column=2).number_format == "0.0%"
 
         movies = wb["Movie by Movie"]
         assert [movies.cell(row=r, column=1).value for r in (4, 5, 6)] == ["Alpha", "Bravo", "Charlie"]
@@ -97,6 +127,7 @@ def test_tableau_rows_are_one_per_movie_per_forecaster():
     alpha = rows[(rows["movie"] == "Alpha") & (rows["forecaster"] == "Predictions")].iloc[0]
     assert (alpha["release_date"], alpha["forecast"], alpha["actual"]) == ("2026-01-02", 110.0, 100.0)
     assert (alpha["status"], alpha["error"], alpha["pct_error"], alpha["direction"]) == ("Released", 10.0, 10.0, "Too high")
+    assert alpha["accuracy_band"] == "Nailed it"
     delta = rows[(rows["movie"] == "Delta") & (rows["forecaster"] == "Tracker Projection")].iloc[0]
     assert delta["status"] == "Upcoming"
     assert pd.isna(delta["pct_error"]) and delta["direction"] == ""
@@ -119,5 +150,7 @@ def test_summary_markdown():
     result = _result()
     markdown = summary_markdown(result, prediction_findings(result), AS_OF)
     assert markdown.startswith("## Prediction Accuracy as of 2026-10-08\n")
+    assert "| **Nailed it (within 10%)** | 1 of 3 | Alpha (+10%) |" in markdown
+    assert "<details><summary>Detailed stats</summary>" in markdown
     assert "| Median error (either direction) | 50.0% | 0.0% |" in markdown
     assert "- Best call: Alpha, predicted $110 vs $100 actual (+10.0%)." in markdown

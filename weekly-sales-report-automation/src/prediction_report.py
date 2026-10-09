@@ -7,6 +7,7 @@ Usage:
 import argparse
 import logging
 import sys
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
@@ -17,7 +18,16 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
-from .excel_report import BAD_FONT, GOOD_FONT, _add_table_polish, _write_dataframe, _write_findings, _write_title
+from .excel_report import (
+    BAD_FONT,
+    GOOD_FONT,
+    GRID_BORDER,
+    _add_table_polish,
+    _write_dataframe,
+    _write_findings,
+    _write_header_row,
+    _write_title,
+)
 from .main import OUTPUT_DIR, describe_error, next_free_path, setup_logging
 from .predictions import (
     Comparison,
@@ -129,8 +139,75 @@ def _unmatched_findings(result: Comparison, released: pd.DataFrame) -> list[str]
     return findings
 
 
-def scorecard_rows(result: Comparison) -> tuple[list[tuple[str, list, str]], list[str]]:
-    """Returns ((label, [value per forecast], kind) rows, forecast column headers) for the scorecard."""
+# (name, description, upper limit of the absolute % error). Each scored movie lands in exactly one band.
+ACCURACY_BANDS = [
+    ("Nailed it", "within 10%", 10),
+    ("Close", "10-25% off", 25),
+    ("Off", "25-50% off", 50),
+    ("Way off", "more than 50% off", float("inf")),
+]
+
+
+def accuracy_band(abs_pct: float) -> str:
+    return next(name for name, _, limit in ACCURACY_BANDS if abs_pct <= limit)
+
+
+def _movie_label(title: str, pct: float) -> str:
+    return f"{title} ({pct:+.1f}%)" if abs(pct) < 10 else f"{title} ({pct:+,.0f}%)"
+
+
+@dataclass
+class ScorecardRow:
+    measure: str
+    result: str
+    movies: list[str] = field(default_factory=list)
+
+
+def scorecard(result: Comparison) -> list[ScorecardRow]:
+    """Simple measures of the predictions' accuracy, each listing the movies behind it."""
+    stats = accuracy_stats(result.movies, "predicted")
+    if stats is None:
+        return []
+    scored = result.movies[result.movies["predicted_pct_error"].notna()].copy()
+    scored["abs_error"] = scored["predicted_pct_error"].abs()
+    n = len(scored)
+
+    def labels(movies: pd.DataFrame) -> list[str]:
+        return [_movie_label(t, p) for t, p in zip(movies["title"], movies["predicted_pct_error"])]
+
+    rows = [
+        ScorecardRow("Movies scored", f"{n} of {len(result.movies)} matched movies"),
+        ScorecardRow("Typical miss (median)", f"{stats['median_abs_pct']:.0f}%"),
+    ]
+    scored["band"] = scored["abs_error"].map(accuracy_band)
+    for name, description, _ in ACCURACY_BANDS:
+        in_band = scored[scored["band"] == name].sort_values("abs_error")
+        rows.append(ScorecardRow(f"{name} ({description})", f"{len(in_band)} of {n}", labels(in_band)))
+
+    too_high = scored[scored["predicted_pct_error"] > 0].sort_values("predicted_pct_error", ascending=False)
+    too_low = scored[scored["predicted_pct_error"] < 0].sort_values("predicted_pct_error")
+    rows.append(ScorecardRow("Predicted too high", f"{len(too_high)} of {n}", labels(too_high)))
+    rows.append(ScorecardRow("Predicted too low", f"{len(too_low)} of {n}", labels(too_low)))
+
+    tracker = accuracy_stats(result.movies, "projection")
+    if tracker is not None:
+        both = scored[scored["projection_pct_error"].notna()]
+        closer = both[both["abs_error"] < both["projection_pct_error"].abs()].sort_values("abs_error")
+        rows.append(ScorecardRow("Closer than the tracker", f"{len(closer)} of {len(both)}", labels(closer)))
+        rows.append(ScorecardRow("Tracker's typical miss (median)", f"{tracker['median_abs_pct']:.0f}%"))
+
+    rows.append(
+        ScorecardRow(
+            "Total predicted vs actual",
+            f"{short_money(stats['total_forecast'])} vs {short_money(stats['total_actual'])} ({stats['total_pct']:+.1f}%)",
+        )
+    )
+    return rows
+
+
+def detailed_stats_rows(result: Comparison) -> tuple[list[tuple[str, list, str]], list[str]]:
+    """Returns ((label, [value per forecast], kind) rows, forecast column headers): the full
+    side-by-side stats for every forecaster."""
     stats = {f: accuracy_stats(result.movies, f) for f in FORECASTS}
     stats = {f: s for f, s in stats.items() if s is not None}
 
@@ -153,17 +230,46 @@ def scorecard_rows(result: Comparison) -> tuple[list[tuple[str, list, str]], lis
     return [(label, values, kind) for label, values, kind in rows], [FORECASTS[f] for f in stats]
 
 
+MOVIES_COLUMN_WIDTH = 95
+
+
 def _build_scorecard_sheet(ws, result: Comparison, findings: list[str], as_of: date) -> None:
     _write_title(ws, f"Prediction Accuracy as of {as_of}", span_cols=3)
-    rows, headers = scorecard_rows(result)
-    if not headers:
+    rows = scorecard(result)
+    if not rows:
         ws.cell(row=3, column=1, value="No released movies to score yet.")
         _write_findings(ws, findings, start_row=5)
         return
 
-    table = pd.DataFrame([[label, *values] for label, values, _ in rows], columns=["Metric", *headers])
     header_row = 3
-    last_row = _write_dataframe(ws, table, header_row)
+    _write_header_row(ws, ["Measure", "Result", "Movies"], header_row)
+    for offset, row in enumerate(rows, start=1):
+        r = header_row + offset
+        movies = ", ".join(row.movies)
+        for col, value in enumerate([row.measure, row.result, movies], start=1):
+            cell = ws.cell(row=r, column=col, value=value or None)
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+            cell.border = GRID_BORDER
+        ws.cell(row=r, column=1).font = Font(bold=True)
+        # Excel doesn't auto-fit wrapped rows written this way, so size each from its movie list.
+        lines = max(1, -(-len(movies) // (MOVIES_COLUMN_WIDTH - 5)))
+        ws.row_dimensions[r].height = 15 * lines + 2
+    last_row = header_row + len(rows)
+    ws.column_dimensions["A"].width = 32
+    ws.column_dimensions["B"].width = 26
+    ws.column_dimensions["C"].width = MOVIES_COLUMN_WIDTH
+    ws.freeze_panes = f"A{header_row + 1}"
+
+    last_row = _write_findings(ws, findings, start_row=last_row + 2)
+    _write_detailed_stats(ws, result, start_row=last_row + 2)
+
+
+def _write_detailed_stats(ws, result: Comparison, start_row: int) -> None:
+    rows, headers = detailed_stats_rows(result)
+    ws.cell(row=start_row, column=1, value="Detailed stats").font = Font(size=12, bold=True, color="1F4E78")
+    table = pd.DataFrame([[label, *values] for label, values, _ in rows], columns=["Metric", *headers])
+    header_row = start_row + 1
+    _write_dataframe(ws, table, header_row)
     formats = {"count": "#,##0", "money": MONEY_FORMAT, "pct": PCT_FORMAT, "pct_abs": "0.0%"}
     for offset, (_, values, kind) in enumerate(rows, start=1):
         for col in range(2, 2 + len(values)):
@@ -171,8 +277,8 @@ def _build_scorecard_sheet(ws, result: Comparison, findings: list[str], as_of: d
             if kind.startswith("pct"):
                 cell.value = cell.value / 100
             cell.number_format = formats[kind]
-    ws.column_dimensions["A"].width = 34
-    _write_findings(ws, findings, start_row=last_row + 2)
+    for col, width in {"A": 32, "B": 26, "C": MOVIES_COLUMN_WIDTH}.items():
+        ws.column_dimensions[col].width = width
 
 
 def _pct_cells(ws, header_row: int, last_row: int, columns: list[int]) -> None:
@@ -256,9 +362,9 @@ def _build_unmatched_sheet(ws, result: Comparison) -> None:
 
 def build_prediction_workbook(result: Comparison, findings: list[str], out_path: Path, as_of: date) -> None:
     wb = Workbook()
-    scorecard = wb.active
-    scorecard.title = "Scorecard"
-    _build_scorecard_sheet(scorecard, result, findings, as_of)
+    scorecard_ws = wb.active
+    scorecard_ws.title = "Scorecard"
+    _build_scorecard_sheet(scorecard_ws, result, findings, as_of)
     _build_movies_sheet(wb.create_sheet("Movie by Movie"), result)
     _build_upcoming_sheet(wb.create_sheet("Upcoming"), result)
     _build_unmatched_sheet(wb.create_sheet("Unmatched"), result)
@@ -287,6 +393,7 @@ def tableau_rows(result: Comparison) -> pd.DataFrame:
                     "pct_error": pct.round(2),
                     "abs_pct_error": pct.abs().round(2),
                     "direction": pct.map(lambda v: "" if pd.isna(v) else "Too high" if v > 0 else "Too low" if v < 0 else "Exact"),
+                    "accuracy_band": pct.abs().map(lambda v: "" if pd.isna(v) else accuracy_band(v)),
                 }
             )
         )
@@ -294,13 +401,22 @@ def tableau_rows(result: Comparison) -> pd.DataFrame:
 
 
 def summary_markdown(result: Comparison, findings: list[str], as_of: date) -> str:
-    rows, headers = scorecard_rows(result)
     lines = [f"## Prediction Accuracy as of {as_of}", ""]
-    if headers:
-        lines += ["| Metric | " + " | ".join(headers) + " |", "|---|" + "--:|" * len(headers)]
-        for label, values, kind in rows:
-            lines.append(f"| {label} | " + " | ".join(format_value(v, kind) for v in values) + " |")
+    rows = scorecard(result)
+    if rows:
+        lines += ["| Measure | Result | Movies |", "|---|---|---|"]
+        for row in rows:
+            movies = ", ".join(row.movies).replace("|", "\\|")
+            lines.append(f"| **{row.measure}** | {row.result} | {movies} |")
     lines += ["", "### Key findings", ""] + [f"- {finding}" for finding in findings]
+
+    stats, headers = detailed_stats_rows(result)
+    if headers:
+        lines += ["", "<details><summary>Detailed stats</summary>", ""]
+        lines += ["| Metric | " + " | ".join(headers) + " |", "|---|" + "--:|" * len(headers)]
+        for label, values, kind in stats:
+            lines.append(f"| {label} | " + " | ".join(format_value(v, kind) for v in values) + " |")
+        lines += ["", "</details>"]
     return "\n".join(lines) + "\n"
 
 
@@ -329,14 +445,14 @@ def run(
 
 
 def _print_summary(result: Comparison, findings: list[str], out_path: Path, as_of: date) -> None:
-    rows, headers = scorecard_rows(result)
-    if headers:
-        table = Table(title=f"Prediction Accuracy as of {as_of}", title_style="bold cyan")
-        table.add_column("Metric", style="bold")
-        for header in headers:
-            table.add_column(header, justify="right")
-        for label, values, kind in rows:
-            table.add_row(label, *(format_value(v, kind) for v in values))
+    rows = scorecard(result)
+    if rows:
+        table = Table(title=f"Prediction Accuracy as of {as_of}", title_style="bold cyan", show_lines=True)
+        table.add_column("Measure", style="bold")
+        table.add_column("Result")
+        table.add_column("Movies", ratio=1)
+        for row in rows:
+            table.add_row(escape(row.measure), escape(row.result), escape(", ".join(row.movies)))
         console.print()
         console.print(table)
     console.print("\n[bold cyan]Key findings[/bold cyan]")

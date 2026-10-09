@@ -17,7 +17,7 @@ from tkinter import filedialog, messagebox, ttk
 from tkcalendar import DateEntry
 
 from .main import describe_error, run_pipeline, setup_logging
-from .prediction_report import format_value, scorecard_rows
+from .prediction_report import scorecard
 from .prediction_report import run as run_predictions
 from .predictions import parse_title_map
 from .report import format_wow
@@ -213,33 +213,35 @@ def _add_open_buttons(parent: ttk.Frame, out_path: Path) -> None:
     ttk.Button(button_row, text="Open Folder", command=lambda: os.startfile(out_path.parent)).pack(side="left", padx=8)
 
 
-def _add_findings_box(parent: ttk.Frame, findings: list[str]) -> None:
-    if not findings:
+def _add_text_box(parent: ttk.Frame, title: str, entries: list[tuple[str, str]]) -> None:
+    """A titled, scrollable, read-only box of entries, each a (bold part, plain part) pair."""
+    if not entries:
         return
-    ttk.Label(parent, text="Key findings", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(12, 4))
-    findings_frame = ttk.Frame(parent)
-    findings_frame.pack(fill="both", expand=True)
-    scrollbar = ttk.Scrollbar(findings_frame, orient="vertical")
+    ttk.Label(parent, text=title, font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(12, 4))
+    frame = ttk.Frame(parent)
+    frame.pack(fill="both", expand=True)
+    scrollbar = ttk.Scrollbar(frame, orient="vertical")
     text = tk.Text(
-        findings_frame, wrap="word", height=8, relief="flat", font=("Segoe UI", 10),
+        frame, wrap="word", height=8, relief="flat", font=("Segoe UI", 10),
         padx=8, pady=6, yscrollcommand=scrollbar.set,
     )
+    text.tag_configure("bold", font=("Segoe UI", 10, "bold"))
     scrollbar.config(command=text.yview)
     scrollbar.pack(side="right", fill="y")
     text.pack(side="left", fill="both", expand=True)
-    text.insert("1.0", "\n\n".join(f"•  {finding}" for finding in findings))
+    for i, (bold, plain) in enumerate(entries):
+        if i:
+            text.insert("end", "\n\n")
+        text.insert("end", bold, "bold")
+        text.insert("end", plain)
     text.config(state="disabled")
 
 
+def _add_findings_box(parent: ttk.Frame, findings: list[str]) -> None:
+    _add_text_box(parent, "Key findings", [("", f"•  {finding}") for finding in findings])
+
+
 SPREADSHEET_TYPES = [("Spreadsheets", "*.csv *.xlsx *.xls"), ("All files", "*.*")]
-# The scorecard rows shown in the window; the Excel report has all of them.
-WINDOW_SCORECARD_ROWS = {
-    "Movies scored",
-    "Median error (either direction)",
-    "Median lean (+ = too high)",
-    "Within 25% of actual",
-    "Total difference",
-}
 
 
 class PredictionTab:
@@ -356,20 +358,12 @@ class PredictionTab:
         self._show_results(result, findings, out_path)
 
     def _show_results(self, result, findings: list[str], out_path: Path) -> None:
-        rows, headers = scorecard_rows(result)
-        if headers:
-            rows = [row for row in rows if row[0] in WINDOW_SCORECARD_ROWS]
-            columns = ["metric", *[f"f{i}" for i in range(len(headers))]]
-            tree = ttk.Treeview(self.results_frame, columns=columns, show="headings", height=len(rows))
-            tree.heading("metric", text="Metric")
-            tree.column("metric", anchor="w", width=240)
-            for i, header in enumerate(headers):
-                tree.heading(f"f{i}", text=header)
-                tree.column(f"f{i}", anchor="e", width=150)
-            for label, values, kind in rows:
-                tree.insert("", "end", values=(label, *(format_value(v, kind) for v in values)))
-            tree.pack(fill="x", pady=(0, 12))
         _add_open_buttons(self.results_frame, out_path)
+        entries = [
+            (f"{row.measure}: ", row.result + (f"\n{', '.join(row.movies)}" if row.movies else ""))
+            for row in scorecard(result)
+        ]
+        _add_text_box(self.results_frame, "Scorecard", entries)
         _add_findings_box(self.results_frame, findings)
 
 
